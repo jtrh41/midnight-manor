@@ -92,3 +92,24 @@ table.nb td.thf{background:#2a1716}
 #flash.go{animation:flash 1.1s ease-out}
 @keyframes flash{0%{opacity:0}6%{opacity:.35}12%{opacity:.05}18%{opacity:.28}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){#rain,.flame,.search-anim .glass{animation:none}#flash.go{animation:none}}
+
+.chip{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:99px;padding:8px 14px;font:15px var(--sans);min-height:40px;cursor:pointer}
+a{color:var(--gold2)}
+.dim{opacity:.35}
+.text-in{width:100%;font:18px var(--sans);padding:12px;border-radius:12px;border:2px solid var(--line);background:var(--ink);color:var(--text);margin:6px 0}
+textarea.text-in{font:13px ui-monospace,Menlo,monospace;word-break:break-all;resize:vertical}
+.small-pick{grid-template-columns:repeat(auto-fill,minmax(56px,1fr))}
+.small-pick .opt{min-height:52px;padding:6px}
+.opt.glow{border-color:#8fe08a;box-shadow:0 0 0 3px rgba(143,224,138,.25)}
+.red-text{color:#ff9a8a!important}
+.themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:12px 0}
+.theme{background:linear-gradient(160deg,color-mix(in srgb,var(--tc) 22%,#221912),#1a130e);border:1px solid color-mix(in srgb,var(--tc) 45%,#3d2d20);border-radius:16px;padding:14px 10px;color:var(--text);text-align:center;cursor:pointer;min-height:132px;font:15px var(--sans)}
+.theme .te{display:block;font-size:44px;line-height:1.15}
+.theme b{display:block;font:17px var(--serif);color:var(--gold2);margin:4px 0}
+.levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin:12px 0}
+.lvl{background:var(--panel2);border:2px solid var(--line);border-radius:14px;padding:10px 6px;color:var(--text);cursor:pointer;min-height:104px;display:flex;flex-direction:column;align-items:center;gap:2px;font:14px var(--sans)}
+.lvl .ln{font:700 26px var(--serif);color:var(--gold2)}
+.lvl .st{font-size:13px}
+.lvl.locked{opacity:.45}
+.clue.big{font-size:22px}
+svg.qr{width:min(260px,70vw);height:auto;border-radius:10px;margin:8px auto;display:block}

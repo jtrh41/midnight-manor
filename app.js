@@ -1,73 +1,100 @@
-// Midnight at the Manor: screens. The mystery itself comes from engine.js (window.Manor).
+// Midnight at the Manor: screens, profiles and saves. The mystery itself comes from engine.js (window.Manor).
 (function () {
 'use strict';
 const M = window.Manor;
-const KEY = 'manor1';
+const KEY = 'manor2', SITE = 'https://jtrh41.github.io/midnight-manor/';
 const $app = document.getElementById('app'), $tabs = document.getElementById('tabs'), $modal = document.getElementById('modal');
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const AVATARS = ['🕵️', '🦉', '🦊', '🐶', '🐱', '🦇', '🐻', '🐰', '🦁', '🐸', '🐧', '🦄', '🐙', '🚀', '👑', '🌟'];
+const NTH = M.THEMES.length;
 
-// ---------- saves ----------
+// ---------- saves (autosaved after every action; one profile per person) ----------
+const clampInt = (v, lo, hi, d) => (Number.isInteger(v) && v >= lo && v <= hi) ? v : d;
+function cleanCase(code, c) {
+  const info = M.readCode(code);
+  if (!c || typeof c !== 'object' || info.error) return null;
+  const n = M.LEVELS[info.level].n, P = info.players;
+  const note = c.note && typeof c.note === 'object' ? c.note : {};
+  const arr = (a, len) => Array.isArray(a) && a.length === len && a.every(x => x === 0 || x === 1 || x === 2) ? a : Array(len).fill(0);
+  return { seat: clampInt(c.seat, -1, P - 1, -1), found: clampInt(c.found, 0, 6, 0), searched: Array.isArray(c.searched) ? c.searched.filter(x => Number.isInteger(x) && x >= 0 && x < n).slice(0, 6) : [],
+    note: { sr: arr(note.sr, n * n), si: arr(note.si, n * n), t: arr(note.t, n) },
+    guesses: Array.isArray(c.guesses) ? c.guesses.filter(g => g && typeof g === 'object').slice(0, 3).map(g => ({ s: clampInt(g.s, 0, 5, 0), r: clampInt(g.r, 0, 5, 0), i: clampInt(g.i, 0, 5, 0), right: clampInt(g.right, 0, 3, 0) })) : [],
+    done: clampInt(c.done, 0, 2, 0), stars: clampInt(c.stars, 0, 3, 0), help: c.help ? 1 : 0, at: Number.isFinite(c.at) ? c.at : Date.now() };
+}
+function newId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+function cleanProfile(p) {
+  if (!p || typeof p !== 'object') return null;
+  const name = String(p.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 20); if (!name) return null;
+  const prog = {};
+  for (const T of M.THEMES) { const a = p.prog && Array.isArray(p.prog[T.key]) ? p.prog[T.key] : []; prog[T.key] = Array.from({ length: 10 }, (_, k) => clampInt(a[k], 0, 3, 0)); }
+  const cases = {};
+  if (p.cases && typeof p.cases === 'object') for (const [code, c] of Object.entries(p.cases)) { const cc = cleanCase(code, c); if (cc) cases[code] = cc; }
+  const r = p.record && typeof p.record === 'object' ? p.record : {};
+  return { id: /^[a-z0-9]{6,16}$/.test(p.id) ? p.id : newId(), name, av: AVATARS.includes(p.av) ? p.av : '🕵️', junior: p.junior ? 1 : 0,
+    record: { solved: clampInt(r.solved, 0, 1e6, 0), stars: clampInt(r.stars, 0, 1e7, 0), played: clampInt(r.played, 0, 1e6, 0) },
+    prog, cases, cur: p.cur && cases[p.cur] ? p.cur : null, made: Number.isFinite(p.made) ? p.made : Date.now() };
+}
 function load() {
-  let d; try { d = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { d = null; }
+  let raw = null, d = null;
+  try { raw = localStorage.getItem(KEY); d = JSON.parse(raw || 'null'); } catch (e) { try { localStorage.setItem(KEY + '-broken-' + Date.now(), raw); } catch (e2) {} d = null; }
   if (!d || typeof d !== 'object') d = {};
-  if (!d.cases || typeof d.cases !== 'object') d.cases = {};
-  if (!d.settings || typeof d.settings !== 'object') d.settings = { sound: 0 };
-  if (!d.record || typeof d.record !== 'object') d.record = { solved: 0, stars: 0, played: 0 };
-  for (const [code, c] of Object.entries(d.cases)) { if (M.readCode(code).error || !c || typeof c !== 'object') delete d.cases[code]; }
-  if (d.cur && !d.cases[d.cur]) d.cur = null;
-  return d;
+  const out = { v: 2, profiles: {}, me: null, settings: { sound: d.settings && d.settings.sound ? 1 : 0 } };
+  if (d.profiles && typeof d.profiles === 'object') for (const p of Object.values(d.profiles)) { const c = cleanProfile(p); if (c) out.profiles[c.id] = c; }
+  out.me = d.me && out.profiles[d.me] ? d.me : null;
+  return out;
 }
 let D = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) {} }
+function save() {
+  try { const prev = localStorage.getItem(KEY); if (prev) localStorage.setItem(KEY + '-prev', prev); localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) {}
+}
+const me = () => D.me ? D.profiles[D.me] : null;
 
 // ---------- view state ----------
-const V = { screen: 'home', tab: 'clues', nb: 'where', draft: { players: 0, lvl: -1 }, joinCode: '', err: '', acc: { s: -1, r: -1, i: -1 }, fresh: -1, searching: -1 };
-let CS = null;           // the built case for D.cur
-function curCase() { return D.cur ? D.cases[D.cur] : null; }
+const V = { screen: 'home', tab: 'clues', nb: 'where', theme: 0, draft: { players: 0, juniors: 0, level: 0 }, joinCode: '', err: '', acc: { s: -1, r: -1, i: -1 }, fresh: -1, searching: -1, newProf: { name: '', av: '🕵️', junior: 0 } };
+let CS = null;
+function curCase() { const p = me(); return p && p.cur ? p.cases[p.cur] : null; }
 function openCase(code) {
-  CS = M.buildCase(code); D.cur = code;
-  if (!D.cases[code]) {
-    const n = CS.n;
-    D.cases[code] = { seat: -1, found: 0, searched: [], note: { sr: Array(n * n).fill(0), si: Array(n * n).fill(0), t: Array(n).fill(0) }, guesses: [], done: 0, stars: 0, help: CS.lvl === 0 ? 1 : 0, at: Date.now() };
-    D.record.played++;
+  const p = me(); CS = M.buildCase(code); p.cur = code;
+  if (!p.cases[code]) {
+    p.cases[code] = cleanCase(code, { seat: -1, help: CS.juniors >= CS.players ? 1 : 0, at: Date.now() });
+    p.record.played++;
+    const keys = Object.keys(p.cases).sort((a, b) => p.cases[b].at - p.cases[a].at); for (const k of keys.slice(25)) delete p.cases[k];   // keep the last 25 cases
   }
-  const c = D.cases[code];   // repair anything odd in an old save
-  if (!(c.seat >= -1 && c.seat < CS.players)) c.seat = -1;
-  c.found = Math.max(0, Math.min(CS.rounds, c.found | 0));
-  if (!Array.isArray(c.searched)) c.searched = [];
-  if (!c.note || !Array.isArray(c.note.sr) || c.note.sr.length !== CS.n * CS.n) c.note = { sr: Array(CS.n * CS.n).fill(0), si: Array(CS.n * CS.n).fill(0), t: Array(CS.n).fill(0) };
-  if (!Array.isArray(c.guesses)) c.guesses = [];
   save();
 }
-if (D.cur) { try { CS = M.buildCase(D.cur); openCase(D.cur); } catch (e) { D.cur = null; CS = null; } }
+function useProfile(id) { D.me = id; CS = null; const p = me(); if (p && p.cur) { try { CS = M.buildCase(p.cur); } catch (e) { p.cur = null; } } save(); }
+if (D.me) useProfile(D.me);
 
 // ---------- art ----------
 function portrait(p, size) {
   const L = p.look, t = p.t, z = size || 56;
   let hair = '', hat = '', extra = '';
-  const coat = L.hatC && L.hat !== 'chef' && L.hat !== 'sun' ? L.hatC : (L.fem ? '#5b3550' : '#2f3a4a');
+  const coat = L.hatC && !['chef', 'sun', 'beanie', 'elf'].includes(L.hat) ? L.hatC : (L.fem ? '#5b3550' : '#2f3a4a');
   if (L.fem) hair = `<path d="M28 44 Q27 18 50 17 Q73 18 72 44 L72 58 Q66 50 66 40 L34 40 Q34 50 28 58 Z" fill="${L.hair}"/>`;
   else if (L.wild) hair = `<path d="M29 40 L26 26 L35 31 L37 18 L45 27 L50 15 L55 27 L63 18 L65 31 L74 26 L71 40 Z" fill="${L.hair}"/>`;
   else hair = `<path d="M30 40 Q30 19 50 19 Q70 19 70 40 Q66 28 50 27 Q34 28 30 40 Z" fill="${L.hair}"/>`;
   if (L.bun) hair += `<circle cx="50" cy="15" r="8" fill="${L.hair}"/>`;
   if (L.braid) hair += `<path d="M69 46 Q76 60 70 74" stroke="${L.hair}" stroke-width="6" fill="none" stroke-linecap="round"/>`;
   if (t.includes('h')) {
-    if (L.hat === 'top') hat = `<rect x="35" y="2" width="30" height="22" rx="2" fill="${L.hatC}"/><rect x="35" y="18" width="30" height="4" fill="#7a1b22"/><rect x="26" y="23" width="48" height="5" rx="2.5" fill="${L.hatC}"/>`;
-    else if (L.hat === 'cap') hat = `<path d="M30 30 Q30 13 50 13 Q70 13 70 30 Z" fill="${L.hatC}"/><path d="M50 28 L80 30 Q78 34 50 32 Z" fill="${L.hatC}"/>`;
-    else if (L.hat === 'sun') hat = `<ellipse cx="50" cy="26" rx="34" ry="7" fill="${L.hatC}"/><path d="M34 26 Q34 10 50 10 Q66 10 66 26 Z" fill="${L.hatC}"/><circle cx="62" cy="19" r="4" fill="#f2b54a"/>`;
-    else if (L.hat === 'chef') hat = `<path d="M33 26 Q24 14 36 10 Q40 2 50 6 Q60 2 64 10 Q76 14 67 26 Z" fill="${L.hatC}"/><rect x="34" y="22" width="32" height="7" fill="#e2ddd2"/>`;
-    else if (L.hat === 'captain') hat = `<path d="M28 24 Q30 12 50 12 Q70 12 72 24 Z" fill="${L.hatC}"/><rect x="29" y="22" width="42" height="6" rx="2" fill="#0e1626"/><circle cx="50" cy="18" r="3" fill="#f2b54a"/>`;
+    const c = L.hatC;
+    if (L.hat === 'top') hat = `<rect x="35" y="2" width="30" height="22" rx="2" fill="${c}"/><rect x="35" y="18" width="30" height="4" fill="#7a1b22"/><rect x="26" y="23" width="48" height="5" rx="2.5" fill="${c}"/>`;
+    else if (L.hat === 'cap') hat = `<path d="M30 30 Q30 13 50 13 Q70 13 70 30 Z" fill="${c}"/><path d="M50 28 L80 30 Q78 34 50 32 Z" fill="${c}"/>`;
+    else if (L.hat === 'sun') hat = `<ellipse cx="50" cy="26" rx="34" ry="7" fill="${c}"/><path d="M34 26 Q34 10 50 10 Q66 10 66 26 Z" fill="${c}"/><circle cx="62" cy="19" r="4" fill="#f2b54a"/>`;
+    else if (L.hat === 'chef') hat = `<path d="M33 26 Q24 14 36 10 Q40 2 50 6 Q60 2 64 10 Q76 14 67 26 Z" fill="${c}"/><rect x="34" y="22" width="32" height="7" fill="#e2ddd2"/>`;
+    else if (L.hat === 'captain') hat = `<path d="M28 24 Q30 12 50 12 Q70 12 72 24 Z" fill="${c}"/><rect x="29" y="22" width="42" height="6" rx="2" fill="#0e1626"/><circle cx="50" cy="18" r="3" fill="#f2b54a"/>`;
+    else if (L.hat === 'beanie') hat = `<path d="M29 31 Q29 10 50 10 Q71 10 71 31 Z" fill="${c}"/><rect x="28" y="26" width="44" height="7" rx="3" fill="#f4f1ea" opacity=".85"/><circle cx="50" cy="8" r="5" fill="#f4f1ea"/>`;
+    else if (L.hat === 'beret') hat = `<ellipse cx="46" cy="22" rx="24" ry="9" fill="${c}"/><circle cx="46" cy="13" r="2.5" fill="${c}"/>`;
+    else if (L.hat === 'tricorn') hat = `<path d="M22 26 Q50 4 78 26 Q64 20 50 24 Q36 20 22 26 Z" fill="${c}"/><path d="M30 22 Q50 8 70 22" stroke="#d8b060" stroke-width="2" fill="none"/><circle cx="50" cy="16" r="3" fill="#f4f1ea"/>`;
+    else if (L.hat === 'elf') hat = `<path d="M29 30 Q34 12 52 10 Q70 4 84 18 Q70 14 68 30 Z" fill="${c}"/><rect x="28" y="26" width="42" height="6" rx="3" fill="#f4f1ea"/><circle cx="85" cy="19" r="4.5" fill="#f4f1ea"/>`;
   }
   if (L.beard) extra += `<path d="M33 46 Q35 70 50 70 Q65 70 67 46 Q60 58 50 58 Q40 58 33 46 Z" fill="${L.hair}"/>`;
   if (t.includes('m')) extra += `<path d="M40 52 Q45 48 50 51 Q55 48 60 52 Q55 55 50 53 Q45 55 40 52 Z" fill="${L.beard ? '#cfc8bb' : L.hair}"/>`;
   if (t.includes('g')) extra += `<g fill="none" stroke="#e8d7a8" stroke-width="2"><circle cx="42" cy="42" r="6"/><circle cx="58" cy="42" r="6"/><path d="M48 42 L52 42"/></g>`;
-  let scarf = t.includes('s') ? `<path d="M30 72 Q50 82 70 72 L70 80 Q50 90 30 80 Z" fill="${L.scarfC}"/><path d="M58 78 L64 96 L56 96 Z" fill="${L.scarfC}"/>` : '';
+  const scarf = t.includes('s') ? `<path d="M30 72 Q50 82 70 72 L70 80 Q50 90 30 80 Z" fill="${L.scarfC}"/><path d="M58 78 L64 96 L56 96 Z" fill="${L.scarfC}"/>` : '';
   return `<svg width="${z}" height="${z}" viewBox="0 0 100 100" role="img" aria-label="${esc(p.name)}"><circle cx="50" cy="50" r="49" fill="#2c2118" stroke="#4a3626"/>
-    <path d="M14 100 Q16 74 50 72 Q84 74 86 100 Z" fill="${coat}"/>
-    <rect x="44" y="58" width="12" height="14" fill="${L.skin}"/>
+    <path d="M14 100 Q16 74 50 72 Q84 74 86 100 Z" fill="${coat}"/><rect x="44" y="58" width="12" height="14" fill="${L.skin}"/>
     ${hair}<ellipse cx="50" cy="44" rx="19" ry="21" fill="${L.skin}"/>${L.fem || L.bun ? `<path d="M31 38 Q34 22 50 22 Q66 22 69 38 Q62 28 50 29 Q38 28 31 38 Z" fill="${L.hair}"/>` : ''}
-    <circle cx="42" cy="42" r="2.2" fill="#1b120c"/><circle cx="58" cy="42" r="2.2" fill="#1b120c"/>
-    <path d="M44 57 L56 57" stroke="#6a3b2a" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="42" cy="42" r="2.2" fill="#1b120c"/><circle cx="58" cy="42" r="2.2" fill="#1b120c"/><path d="M44 57 L56 57" stroke="#6a3b2a" stroke-width="2" stroke-linecap="round"/>
     ${extra}${scarf}${hat}</svg>`;
 }
 function manorArt() {
@@ -76,30 +103,30 @@ function manorArt() {
   <rect width="320" height="170" fill="url(#sky)" rx="14"/>
   <circle cx="258" cy="36" r="18" fill="#efe3c2" opacity=".9"/><circle cx="266" cy="31" r="16" fill="#2a1c2e"/>
   <path d="M0 150 Q80 138 160 146 Q240 154 320 142 L320 170 L0 170 Z" fill="#0c0806"/>
-  <g fill="#0f0a08">
-    <rect x="70" y="70" width="180" height="80"/><polygon points="62,72 160,30 258,72"/>
-    <rect x="140" y="20" width="40" height="70"/><polygon points="134,22 160,0 186,22"/>
-    <rect x="40" y="88" width="40" height="62"/><polygon points="34,90 60,66 86,90"/>
-    <rect x="240" y="88" width="40" height="62"/><polygon points="234,90 260,66 286,90"/>
-  </g>
+  <g fill="#0f0a08"><rect x="70" y="70" width="180" height="80"/><polygon points="62,72 160,30 258,72"/><rect x="140" y="20" width="40" height="70"/><polygon points="134,22 160,0 186,22"/>
+    <rect x="40" y="88" width="40" height="62"/><polygon points="34,90 60,66 86,90"/><rect x="240" y="88" width="40" height="62"/><polygon points="234,90 260,66 286,90"/></g>
   <circle cx="160" cy="44" r="9" fill="#f2b54a" opacity=".85"/><path d="M160 38 L160 44 L164 47" stroke="#3a2616" stroke-width="2" fill="none"/>
   <g fill="#f2b54a"><rect x="88" y="86" width="14" height="18" rx="2" opacity=".9"/><rect x="118" y="86" width="14" height="18" rx="2" opacity=".35"/><rect x="188" y="86" width="14" height="18" rx="2" opacity=".75"/>
   <rect x="218" y="86" width="14" height="18" rx="2" opacity=".3"/><rect x="88" y="118" width="14" height="18" rx="2" opacity=".4"/><rect x="218" y="118" width="14" height="18" rx="2" opacity=".85"/>
   <rect x="52" y="104" width="12" height="16" rx="2" opacity=".6"/><rect x="256" y="104" width="12" height="16" rx="2" opacity=".5"/></g>
-  <path d="M150 150 L150 124 Q160 114 170 124 L170 150 Z" fill="#3a2616"/>
-  </svg>`;
+  <path d="M150 150 L150 124 Q160 114 170 124 L170 150 Z" fill="#3a2616"/></svg>`;
 }
 function candle(left, total) {
   const f = total ? Math.max(0, left) / total : 0, h = 8 + 40 * f, y = 60 - h;
-  return `<svg class="candle" viewBox="0 0 34 64" aria-label="${left} searches left">
-    <ellipse cx="17" cy="61" rx="15" ry="3" fill="#3a2616"/>
-    <rect x="9" y="${y}" width="16" height="${h}" rx="3" fill="#efe2c6"/><rect x="9" y="${y}" width="5" height="${h}" rx="2" fill="#fff6e4" opacity=".6"/>
-    <path d="M17 ${y} L17 ${y - 4}" stroke="#222" stroke-width="1.5"/>
-    ${left > 0 ? `<g class="flame"><path d="M17 ${y - 18} Q24 ${y - 8} 17 ${y - 3} Q10 ${y - 8} 17 ${y - 18} Z" fill="#f2b54a"/><path d="M17 ${y - 12} Q20 ${y - 7} 17 ${y - 4} Q14 ${y - 7} 17 ${y - 12} Z" fill="#fff3c4"/></g>` : `<path d="M17 ${y - 6} q3 -6 -1 -12 q5 4 2 12" stroke="#777" fill="none" opacity=".6"/>`}
-  </svg>`;
+  return `<svg class="candle" viewBox="0 0 34 64" aria-label="${left} searches left"><ellipse cx="17" cy="61" rx="15" ry="3" fill="#3a2616"/>
+    <rect x="9" y="${y}" width="16" height="${h}" rx="3" fill="#efe2c6"/><rect x="9" y="${y}" width="5" height="${h}" rx="2" fill="#fff6e4" opacity=".6"/><path d="M17 ${y} L17 ${y - 4}" stroke="#222" stroke-width="1.5"/>
+    ${left > 0 ? `<g class="flame"><path d="M17 ${y - 18} Q24 ${y - 8} 17 ${y - 3} Q10 ${y - 8} 17 ${y - 18} Z" fill="#f2b54a"/><path d="M17 ${y - 12} Q20 ${y - 7} 17 ${y - 4} Q14 ${y - 7} 17 ${y - 12} Z" fill="#fff3c4"/></g>` : `<path d="M17 ${y - 6} q3 -6 -1 -12 q5 4 2 12" stroke="#777" fill="none" opacity=".6"/>`}</svg>`;
 }
+function qrSvg(text) {
+  try {
+    const q = qrcode(0, 'M'); q.addData(text); q.make(); const n = q.getModuleCount(); let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    return `<svg class="qr" viewBox="-2 -2 ${n + 4} ${n + 4}" role="img" aria-label="QR code"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  } catch (e) { return ''; }
+}
+const starRow = (k, max) => '⭐'.repeat(k) + '<span class="dim">' + '☆'.repeat((max || 3) - k) + '</span>';
 
-// ---------- sound (made on the phone, nothing downloaded) ----------
+// ---------- sound (made on the device, nothing downloaded) ----------
 let AC = null, rainNode = null;
 function noiseBuf(sec) { const b = AC.createBuffer(1, AC.sampleRate * sec, AC.sampleRate), d = b.getChannelData(0); for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1; return b; }
 function soundOn() {
@@ -109,155 +136,198 @@ function soundOn() {
     if (rainNode) return;
     const src = AC.createBufferSource(); src.buffer = noiseBuf(3); src.loop = true;
     const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100;
-    const g = AC.createGain(); g.gain.value = 0.045;
-    src.connect(lp).connect(g).connect(AC.destination); src.start(); rainNode = { src, g };
+    const g = AC.createGain(); g.gain.value = 0.045; src.connect(lp).connect(g).connect(AC.destination); src.start(); rainNode = { src, g };
   } catch (e) {}
 }
 function soundOff() { if (rainNode) { try { rainNode.src.stop(); } catch (e) {} rainNode = null; } }
 function thunder() {
   if (!D.settings.sound || !AC) return;
-  try {
-    const src = AC.createBufferSource(); src.buffer = noiseBuf(4);
-    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
+  try { const src = AC.createBufferSource(); src.buffer = noiseBuf(4); const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
     const g = AC.createGain(), t = AC.currentTime; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
-    src.connect(lp).connect(g).connect(AC.destination); src.start(); src.stop(t + 4);
-  } catch (e) {}
+    src.connect(lp).connect(g).connect(AC.destination); src.start(); src.stop(t + 4); } catch (e) {}
 }
 function chime(ok) {
   if (!D.settings.sound || !AC) return;
-  try {
-    const notes = ok ? [523, 659, 784, 1046] : [330, 262];
-    notes.forEach((f, k) => { const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + k * 0.16; o.type = 'triangle'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 0.7); });
-  } catch (e) {}
+  try { (ok ? [523, 659, 784, 1046] : [330, 262]).forEach((f, k) => { const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime + k * 0.16; o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6); o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 0.7); }); } catch (e) {}
 }
 let nextFlash = Date.now() + 9000;
 setInterval(() => {
-  if (document.hidden || V.screen === 'home') return;
-  if (Date.now() < nextFlash) return;
+  if (document.hidden || !['intro', 'game'].includes(V.screen) || Date.now() < nextFlash) return;
   nextFlash = Date.now() + 25000 + Math.random() * 35000;
   const f = document.getElementById('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
   setTimeout(thunder, 500 + Math.random() * 1200);
 }, 1000);
-function say(text) {
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 0.92; u.pitch = 1; speechSynthesis.speak(u); } catch (e) {}
-}
+function say(text) { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 0.92; speechSynthesis.speak(u); } catch (e) {} }
 
 // ---------- helpers ----------
 const roomName = r => CS.rooms[r].name, itemName = i => CS.items[i].name;
+const isJuniorSeat = () => { const c = curCase(); return c && c.seat >= 0 && c.seat < CS.juniors; };
 function myClues() { const c = curCase(); if (!c || c.seat < 0) return []; return CS.piles[c.seat].slice(0, CS.start + c.found); }
-function left() { const c = curCase(); return CS.rounds - c.found; }
-function tagsOfSuspect(p) { return [...p.t].map(k => M.TRAITS[k].label); }
-function tagsOfItem(it) { return [...it.t].map(k => M.TAGS[k].who); }
+function left() { return CS.rounds - curCase().found; }
+function unlocked(p, t, lvl) { return lvl === 0 || p.prog[M.THEMES[t].key][lvl - 1] > 0; }
+function themeStars(p, t) { return p.prog[M.THEMES[t].key].reduce((a, b) => a + b, 0); }
+function levelBlurb(l) { const L = M.LEVELS[l]; return `${L.n} suspects · ${M.STYLE[L.w]}`; }
 function clueCard(cl, idx, src, fresh) {
-  const c = curCase(), txt = M.clueText(cl, CS), hint = c.help ? M.hintText(cl, CS) : '';
-  return `<div class="clue${fresh ? ' new' : ''}">${src ? `<div class="src">${esc(src)}</div>` : ''}<div>${esc(txt)}</div>${hint ? `<div class="hint">💡 ${esc(hint)}</div>` : ''}
+  const c = curCase(), hint = c.help ? M.hintText(cl, CS) : '';
+  return `<div class="clue${fresh ? ' new' : ''}${isJuniorSeat() ? ' big' : ''}">${src ? `<div class="src">${esc(src)}</div>` : ''}<div>${esc(M.clueText(cl, CS))}</div>${hint ? `<div class="hint">💡 ${esc(hint)}</div>` : ''}
     <button class="say" data-a="say" data-v="${idx}" aria-label="Read aloud">🔊</button></div>`;
 }
 function topBar() {
-  const c = curCase();
+  const c = curCase(), b = M.BADGES[c.seat];
   return `<div class="top">${candle(left(), CS.rounds)}<div class="t"><h2>${esc(CS.crime.title)}</h2>
-    <div class="muted small">${esc(M.BADGES[c.seat].e + ' ' + M.BADGES[c.seat].name)} · ${left() > 0 ? `${left()} search${left() === 1 ? '' : 'es'} left` : 'candle is out'}</div></div>
+    <div class="muted small">${b.e} ${esc(b.name)}${isJuniorSeat() ? ' (junior)' : ''} · ${left() > 0 ? `${left()} search${left() === 1 ? '' : 'es'} left` : 'candle is out'}</div></div>
     <button class="iconbtn" data-a="sound" aria-label="Sound">${D.settings.sound ? '🔊' : '🔈'}</button><button class="iconbtn" data-a="home" aria-label="Home">🏠</button></div>`;
 }
+function profileChip() { const p = me(); return p ? `<button class="chip" data-a="who">${esc(p.av)} ${esc(p.name)} <span class="muted">· switch</span></button>` : ''; }
 
 // ---------- screens ----------
 const SCREENS = {
   home() {
-    const c = curCase(), r = D.record;
-    return `${manorArt()}<h1>Midnight at<br>the Manor</h1>
+    const p = me(); if (!p) return SCREENS.who();
+    const c = curCase(), r = p.record, live = c && !c.done && c.seat >= 0;
+    return `<div class="center">${profileChip()}</div>${manorArt()}<h1>Midnight at<br>the Manor</h1>
       <p class="center muted">A family mystery. Everyone gets secret clues. Solve it together before the candle burns out.</p>
-      ${c && !c.done && c.seat >= 0 ? `<button class="btn" data-a="resume">🕯️ Continue: ${esc(CS.crime.title)}</button>` : ''}
-      <button class="btn${c && !c.done && c.seat >= 0 ? ' ghost' : ''}" data-a="new">🔍 Start a new case</button>
+      ${live ? `<button class="btn" data-a="resume">🕯️ Continue: ${esc(CS.crime.title)}</button>` : ''}
+      <button class="btn${live ? ' ghost' : ''}" data-a="book">📖 Case book: start a case</button>
       <button class="btn ghost" data-a="join">🗝️ Join a case</button>
-      <button class="btn ghost" data-a="how">📜 How to play</button>
+      <div class="row"><button class="btn ghost" data-a="how">📜 How to play</button><button class="btn ghost" data-a="share">📲 Share</button></div>
       <div class="card"><div class="toggle"><span>Rain &amp; thunder sounds</span><button class="${D.settings.sound ? 'on' : ''}" data-a="sound">${D.settings.sound ? 'On' : 'Off'}</button></div>
-      <div class="muted small">Cases solved: <b>${r.solved}</b> · Stars earned: <b>${r.stars}</b> ⭐</div></div>`;
+      <div class="muted small">${esc(p.name)}: ${r.solved} solved · ${r.stars} ⭐ · <a href="#" data-a="profile">profile &amp; backup</a></div></div>`;
+  },
+  who() {
+    const list = Object.values(D.profiles).sort((a, b) => a.made - b.made);
+    return `${manorArt()}<h1>Who's playing?</h1><p class="center muted">Each detective keeps their own progress and stars on this device.</p>
+      <div class="pick">${list.map(p => `<button class="opt${D.me === p.id ? ' on' : ''}" data-a="pickme" data-v="${p.id}"><span class="big">${esc(p.av)}</span><b>${esc(p.name)}</b><span class="small muted">${p.record.stars} ⭐${p.junior ? ' · junior' : ''}</span></button>`).join('')}
+      <button class="opt" data-a="addprof"><span class="big">➕</span><b>New detective</b></button></div>
+      <button class="btn ghost" data-a="restore">Restore from a backup code</button>`;
+  },
+  addprof() {
+    const n = V.newProf;
+    return `<h2>New detective</h2><div class="card"><label class="small muted" for="pname">Name</label>
+      <input id="pname" class="text-in" maxlength="20" autocomplete="off" value="${esc(n.name)}" placeholder="e.g. Jude">
+      <h3>Pick a picture</h3><div class="pick small-pick">${AVATARS.map(a => `<button class="opt${n.av === a ? ' on' : ''}" data-a="pav" data-v="${a}"><span class="big">${a}</span></button>`).join('')}</div>
+      <div class="toggle"><span>🐣 Junior detective<br><span class="small muted">Gets the simpler clues, the clue helper and read-aloud.</span></span><button class="${n.junior ? 'on' : ''}" data-a="pjun">${n.junior ? 'Yes' : 'No'}</button></div>
+      <div class="err">${esc(V.err)}</div></div>
+      <button class="btn" data-a="saveprof">Save detective</button><button class="btn ghost" data-a="who">Back</button>`;
+  },
+  profile() {
+    const p = me();
+    const total = M.THEMES.reduce((a, T, t) => a + themeStars(p, t), 0);
+    return `<h2>${esc(p.av)} ${esc(p.name)}</h2>
+      <div class="card"><p>${p.record.solved} cases solved · ${total} of ${NTH * 30} case-book stars</p>
+      <div class="toggle"><span>🐣 Junior detective</span><button class="${p.junior ? 'on' : ''}" data-a="togjun">${p.junior ? 'Yes' : 'No'}</button></div>
+      <p class="small muted">Progress saves by itself after every move. It lives on this device only, so make a backup code now and then (or before getting a new device).</p></div>
+      <button class="btn" data-a="backup">💾 Make a backup code</button>
+      <button class="btn ghost" data-a="restore">Restore from a backup code</button>
+      <button class="btn ghost" data-a="who">Switch detective</button>
+      <button class="btn ghost red-text" data-a="delprof">Delete ${esc(p.name)}</button>
+      <button class="btn ghost" data-a="home">Back</button>`;
   },
   how() {
     return `<h2>How to play</h2>
-      <div class="card"><p><b>1.</b> One person taps <b>Start a new case</b> and picks how many detectives are playing. They get a 5-letter code.</p>
-      <p><b>2.</b> Everyone else taps <b>Join a case</b> and types the code. Each person picks a different badge.</p>
-      <p><b>3.</b> Each phone shows <b>secret clues</b> only that detective can see. Read them out, or keep one back for a dramatic moment.</p>
+      <div class="card"><p><b>1.</b> One person opens the <b>Case book</b>, picks a place and a case, and says how many detectives (and how many juniors) are playing. They get a 6-letter code.</p>
+      <p><b>2.</b> Everyone else taps <b>Join a case</b> and types the code. Each person picks a different badge. <b>Junior detectives pick a 🐣 junior badge</b>: those get simpler clues.</p>
+      <p><b>3.</b> Each device shows <b>secret clues</b> only that detective can see. Read them out, or keep one back for a dramatic moment.</p>
       <p><b>4.</b> Each round, everyone <b>searches a room</b> for one more clue. The candle burns down with each search.</p>
       <p><b>5.</b> Mark what you learn in the <b>Notebook</b>: ✗ for "no", ✓ for "yes".</p>
-      <p><b>6.</b> When the team agrees, one phone makes the <b>accusation</b>: WHO took it, WHERE they hid it, and WHAT they used. Three tries. Fewer tries, more stars.</p></div>
-      <div class="card"><h3>The golden rule</h3><p>Every guest was in a <b>different room</b> and held a <b>different thing</b>. The thief hid the treasure in the room they were in, and used the thing they were holding.</p>
-      <p class="muted small">Every clue is true. Nobody's clues alone are enough: you need each other. Works with no internet.</p></div>
+      <p><b>6.</b> When the team agrees, <b>everyone enters the team's answer</b> under Accuse: WHO took it, WHERE they hid it, WHAT they used. Three tries; fewer tries, more stars. Solving a case unlocks the next one.</p></div>
+      <div class="card"><h3>The golden rule</h3><p>Every suspect was in a <b>different room</b> and held a <b>different thing</b>. The thief hid the treasure in the room they were in, and used the thing they were holding.</p>
+      <p class="muted small">Every clue is true. Nobody's clues alone are enough. Works with no internet.</p></div>
       <button class="btn" data-a="home">Got it</button>`;
   },
-  new() {
-    const d = V.draft;
-    return `<h2>New case</h2><div class="card"><h3>How many detectives?</h3><p class="muted small">Count everyone playing on their own phone or iPad.</p>
-      <div class="pick">${[1, 2, 3, 4, 5].map(k => `<button class="opt${d.players === k ? ' on' : ''}" data-a="dp" data-v="${k}"><span class="big">${k}</span><b>${k === 1 ? 'Just me' : k + ' players'}</b></button>`).join('')}</div></div>
-      <div class="card"><h3>How tricky?</h3>${M.LEVELS.map((L, k) => `<button class="opt${d.lvl === k ? ' on' : ''}" style="width:100%;text-align:left;margin:6px 0;padding:12px" data-a="dl" data-v="${k}"><b style="font-size:17px">${['🐣', '🔎', '🎩'][k]} ${esc(L.name)}</b><span class="muted small">${esc(L.blurb)}</span></button>`).join('')}</div>
-      <button class="btn" data-a="create" ${d.players && d.lvl >= 0 ? '' : 'disabled'}>Open the case file</button>
+  share() {
+    return `<h2 class="center">Get the game on another device</h2><div class="card center">${qrSvg(SITE)}
+      <p>Point the camera at this code, tap the link, then in Safari tap <b>Share</b> → <b>Add to Home Screen</b>.</p><p class="small muted">${esc(SITE)}</p></div>
       <button class="btn ghost" data-a="home">Back</button>`;
   },
+  book() {
+    const p = me();
+    return `<h2>📖 Case book</h2><p class="muted">Pick a place. Each has 10 cases that get harder. Solve one to unlock the next.</p>
+      <div class="themes">${M.THEMES.map((T, t) => { const st = themeStars(p, t), solved = p.prog[T.key].filter(x => x > 0).length;
+        return `<button class="theme" data-a="theme" data-v="${t}" style="--tc:${T.color}"><span class="te">${T.e}</span><b>${esc(T.name)}</b><span class="small muted">${solved}/10 solved · ${st} ⭐</span></button>`; }).join('')}</div>
+      <button class="btn ghost" data-a="surprise">🎲 Surprise me</button><button class="btn ghost" data-a="home">Back</button>`;
+  },
+  levels() {
+    const p = me(), T = M.THEMES[V.theme], pr = p.prog[T.key];
+    return `<h2>${T.e} ${esc(T.name)}</h2><p class="muted small">${esc(T.intro)}</p>
+      <div class="levels">${pr.map((s, l) => { const ok = unlocked(p, V.theme, l);
+        return `<button class="lvl${ok ? '' : ' locked'}" data-a="level" data-v="${l}" ${ok ? '' : 'disabled'}><span class="ln">${ok ? l + 1 : '🔒'}</span><span class="small">${levelBlurb(l)}</span><span class="st">${starRow(s)}</span></button>`; }).join('')}</div>
+      <button class="btn ghost" data-a="book">Back to the case book</button>`;
+  },
+  setup() {
+    const d = V.draft, T = M.THEMES[V.theme];
+    return `<h2>${T.e} Case ${d.level + 1}</h2><p class="muted">${esc(T.name)} · ${levelBlurb(d.level)}</p>
+      <div class="card"><h3>How many detectives?</h3><p class="muted small">Everyone playing on their own phone or iPad, including you.</p>
+      <div class="pick">${[1, 2, 3, 4, 5].map(k => `<button class="opt${d.players === k ? ' on' : ''}" data-a="dp" data-v="${k}"><span class="big">${k}</span><b>${k === 1 ? 'Just me' : k + ' players'}</b></button>`).join('')}</div></div>
+      ${d.players ? `<div class="card"><h3>How many are junior detectives? 🐣</h3><p class="muted small">Juniors get simpler clues, with the helper and read-aloud. Grown-ups get the harder ones.</p>
+      <div class="pick">${Array.from({ length: d.players + 1 }, (_, k) => `<button class="opt${d.juniors === k ? ' on' : ''}" data-a="dj" data-v="${k}"><span class="big">${k}</span><b>${k === 0 ? 'None' : k === d.players ? 'Everyone' : k + ' junior' + (k > 1 ? 's' : '')}</b></button>`).join('')}</div></div>` : ''}
+      <button class="btn" data-a="create" ${d.players ? '' : 'disabled'}>Open the case file</button>
+      <button class="btn ghost" data-a="theme" data-v="${V.theme}">Back</button>`;
+  },
   code() {
-    return `<h2 class="center">${esc(CS.crime.e)} ${esc(CS.crime.title)}</h2>
-      <div class="card center"><p>Your case code is</p><div class="code">${esc(CS.code)}</div>
-      <p class="muted">${CS.players > 1 ? `Everyone else: tap <b>Join a case</b> and type this code. (${CS.players} detectives, ${esc(CS.level.name)})` : `${esc(CS.level.name)}, playing solo.`}</p></div>
+    const code = CS.code;
+    return `<h2 class="center">${esc(CS.crime.e)} ${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1}</p>
+      <div class="card center"><p>Case code</p><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>
+      <p class="muted">${CS.players > 1 ? `Everyone else: tap <b>Join a case</b> and type this code.<br>${CS.players} detectives${CS.juniors ? `, ${CS.juniors} junior` : ''}.` : 'Playing solo.'}</p></div>
       <button class="btn" data-a="tobadge">${CS.players > 1 ? 'Everyone has it, pick my badge' : 'Begin'}</button>`;
   },
   join() {
-    return `<h2>Join a case</h2><div class="card"><p>Type the 5-letter code from the phone that started the case.</p>
-      <input id="codein" class="code-in" maxlength="7" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" value="${esc(V.joinCode)}" aria-label="Case code">
+    return `<h2>Join a case</h2><div class="card"><p>Type the 6-letter code from the device that started the case.</p>
+      <input id="codein" class="code-in" maxlength="8" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" value="${esc(V.joinCode)}" aria-label="Case code">
       <div class="err">${esc(V.err)}</div></div>
       <button class="btn" data-a="dojoin">Join</button><button class="btn ghost" data-a="home">Back</button>`;
   },
   badge() {
-    const c = curCase();
-    return `<h2 class="center">${esc(CS.crime.title)}</h2><p class="center muted">${CS.players > 1 ? `${CS.players} detectives · ${esc(CS.level.name)}<br>Each detective picks a <b>different</b> badge. Your badge decides your secret clues.` : esc(CS.level.name)}</p>
-      <div class="pick">${M.BADGES.slice(0, CS.players).map((b, k) => `<button class="opt${c.seat === k ? ' on' : ''}" data-a="seat" data-v="${k}"><span class="big">${b.e}</span><b>${esc(b.name)}</b></button>`).join('')}</div>
-      <button class="btn" data-a="tointro" ${c.seat >= 0 ? '' : 'disabled'}>Enter the manor</button>`;
+    const c = curCase(), p = me(), J = CS.juniors;
+    return `<h2 class="center">${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1}<br>
+      Each detective picks a <b>different</b> badge.${J ? ` ${J === CS.players ? 'Every badge is a 🐣 junior badge.' : `The 🐣 badges are for junior detectives${p.junior ? ' (that\'s you!)' : ''}.`}` : ''}</p>
+      <div class="pick">${M.BADGES.slice(0, CS.players).map((b, k) => `<button class="opt${c.seat === k ? ' on' : ''}${k < J && p.junior && c.seat < 0 ? ' glow' : ''}" data-a="seat" data-v="${k}"><span class="big">${b.e}</span><b>${esc(b.name)}</b>${k < J ? '<span class="small">🐣 junior</span>' : ''}</button>`).join('')}</div>
+      <button class="btn" data-a="tointro" ${c.seat >= 0 ? '' : 'disabled'}>Enter</button>`;
   },
   intro() {
     const cr = CS.crime;
     return `<h2 class="center">${esc(cr.e)} ${esc(cr.title)}</h2>
-      <div class="card"><p>Thunder rolls over Blackwood Manor. At the stroke of midnight the lights flicker out...</p>
-      <p>When they come back on, <b>${esc(cr.what)}</b> is gone from ${esc(cr.from)}!</p>
-      <p>${CS.n} guests were in the house. Each was in a <b>different room</b>, holding a <b>different thing</b>. One of them is the thief.</p>
+      <div class="card"><p>${esc(CS.theme.intro)}</p><p>When the lights come back, <b>${esc(cr.what)}</b> is gone from ${esc(cr.from)}!</p>
+      <p>${CS.n} suspects were there. Each was in a <b>different room</b>, holding a <b>different thing</b>. One of them is the thief.</p>
       <p>Find out <b>WHO</b> took it, <b>WHERE</b> they hid it (the room they were in), and <b>WHAT</b> they used (the thing they were holding).</p>
-      <p class="muted">Your candle lasts ${CS.rounds} searches. ${CS.players > 1 ? 'Share your clues and work it out together.' : ''}</p></div>
-      <div class="card"><h3>The guests</h3>${CS.sus.map(p => `<div class="who">${portrait(p, 52)}<div><b>${esc(p.name)}</b><div class="muted small">${esc(p.role)}</div></div></div>`).join('')}</div>
+      <p class="muted">Your candle lasts ${CS.rounds} searches.</p></div>
+      <div class="card"><h3>The suspects</h3>${CS.sus.map(p => `<div class="who">${portrait(p, 52)}<div><b>${esc(p.name)}</b><div class="muted small">${esc(p.role)}</div></div></div>`).join('')}</div>
       <button class="btn" data-a="start">Open my secret clues</button>`;
   },
   game() { return topBar() + TABS[V.tab](); },
   result() {
-    const c = curCase(), st = M.storyText(CS), won = c.done === 1;
+    const c = curCase(), st = M.storyText(CS), won = c.done === 1, nextOk = won && CS.level < 9;
     return `<h2 class="center">${won ? 'Case closed!' : c.guesses.length >= 3 && c.guesses.every(g => g.right < 3) ? 'The thief got away...' : 'Here is what really happened'}</h2>
-      ${won ? `<div class="stars reveal">${'⭐'.repeat(c.stars)}${'☆'.repeat(3 - c.stars)}</div>` : ''}
+      ${won ? `<div class="stars reveal">${starRow(c.stars)}</div>` : ''}
       <div class="card reveal center">${portrait(st.who, 120)}<h3>${esc(st.lines[0])}</h3></div>
-      <div class="card">${st.lines.slice(1).map(l => `<p>${esc(l)}</p>`).join('')}
-      <p class="muted small">${st.room.e} ${esc(st.room.name)} · ${st.item.e} the ${esc(st.item.name)}</p></div>
-      ${won ? `<p class="center muted">Solved in ${c.guesses.length} ${c.guesses.length === 1 ? 'try' : 'tries'}${left() > 0 ? ` with ${left()} search${left() === 1 ? '' : 'es'} of candle to spare` : ''}.</p>` : ''}
-      <button class="btn" data-a="new">New case</button><button class="btn ghost" data-a="tab" data-v="clues">Look back at my clues</button><button class="btn ghost" data-a="home">Home</button>`;
+      <div class="card">${st.lines.slice(1).map(l => `<p>${esc(l)}</p>`).join('')}<p class="muted small">${st.room.e} ${esc(st.room.name)} · ${st.item.e} the ${esc(st.item.name)}</p></div>
+      ${won ? `<p class="center muted">Solved in ${c.guesses.length} ${c.guesses.length === 1 ? 'try' : 'tries'}${left() > 0 ? ` with ${left()} search${left() === 1 ? '' : 'es'} of candle to spare` : ''}.${nextOk ? ` Case ${CS.level + 2} is unlocked!` : ''}</p>` : ''}
+      ${nextOk ? `<button class="btn" data-a="nextcase">Next case: ${CS.theme.e} Case ${CS.level + 2}</button>` : ''}
+      <button class="btn${nextOk ? ' ghost' : ''}" data-a="book">Case book</button><button class="btn ghost" data-a="tab" data-v="clues">Look back at my clues</button><button class="btn ghost" data-a="home">Home</button>`;
   },
 };
 const TABS = {
   clues() {
     const c = curCase(), mine = myClues();
-    let h = `<div class="toggle"><span class="small">💡 Clue helper (explains what each clue means)</span><button class="${c.help ? 'on' : ''}" data-a="help">${c.help ? 'On' : 'Off'}</button></div>`;
-    h += `<h3>Your secret starting clues</h3>`;
+    let h = `<div class="toggle"><span class="small">💡 Clue helper (explains what each clue means)</span><button class="${c.help ? 'on' : ''}" data-a="help">${c.help ? 'On' : 'Off'}</button></div><h3>Your secret starting clues</h3>`;
     mine.slice(0, CS.start).forEach((cl, k) => { h += clueCard(cl, k, '', false); });
     if (mine.length > CS.start) h += `<h3>Clues you found</h3>`;
-    for (let k = mine.length - 1; k >= CS.start; k--) { const f = k - CS.start, r = c.searched[f]; h += clueCard(mine[k], k, (r >= 0 && r < CS.n ? CS.rooms[r].e + ' ' + CS.rooms[r].name + ': ' : '') + M.FINDS[CS.flavor[c.seat][f % M.FINDS.length]], V.fresh === k); }
+    for (let k = mine.length - 1; k >= CS.start; k--) { const f = k - CS.start, r = c.searched[f]; h += clueCard(mine[k], k, (r >= 0 && r < CS.n ? CS.rooms[r].e + ' ' + CS.rooms[r].name + ': ' : '') + CS.finds[CS.flavor[c.seat][f % CS.finds.length]], V.fresh === k); }
     if (!c.done) h += left() > 0 ? `<button class="btn" data-a="tab" data-v="search">🔦 Search a room (${left()} left)</button>` : `<button class="btn red" data-a="tab" data-v="accuse">The candle is out: make the accusation</button>`;
-    V.fresh = -1;
-    return h;
+    V.fresh = -1; return h;
   },
   search() {
-    const c = curCase();
+    const c = curCase(), Z = CS.theme.zone, F = CS.theme.flag;
     if (V.searching >= 0) return `<div class="search-anim"><div class="glass">🔍</div><p>Searching the ${esc(roomName(V.searching))}...</p></div>`;
     if (c.done) return `<div class="card center"><p>This case is closed.</p></div>`;
     if (left() <= 0) return `<div class="card center"><p>🕯️ Your candle has burned out. No more searching!</p><p class="muted">Talk it over with the team, then make the accusation.</p></div><button class="btn red" data-a="tab" data-v="accuse">Make the accusation</button>`;
-    const all = c.searched.length >= CS.n, roundNo = c.found + 1;
-    let h = `<p class="center">Round <b>${roundNo}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? '<br><span class="muted small">Everyone searches once, then share what you found.</span>' : ''}</p>`;
+    const all = c.searched.length >= CS.n;
+    let h = `<p class="center">Round <b>${c.found + 1}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? '<br><span class="muted small">Everyone searches once, then share what you found.</span>' : ''}</p>`;
     for (const up of [1, 0]) {
-      h += `<div class="floor">${up ? 'Upstairs' : 'Downstairs'}</div><div class="pick">`;
+      h += `<div class="floor">${esc(up ? Z.up : Z.down)}</div><div class="pick">`;
       CS.rooms.forEach((r, k) => { if (!!r.up !== !!up) return; const done = c.searched.includes(k) && !all;
-        h += `<button class="opt${done ? ' done' : ''}" data-a="searchroom" data-v="${k}" ${done ? 'disabled' : ''}><span class="big">${r.e}</span><b>${esc(r.name)}</b>${r.fire ? '<span class="small">🔥 fireplace</span>' : ''}${done ? '<span class="small muted">searched</span>' : ''}</button>`; });
+        h += `<button class="opt${done ? ' done' : ''}" data-a="searchroom" data-v="${k}" ${done ? 'disabled' : ''}><span class="big">${r.e}</span><b>${esc(r.name)}</b>${r.flag ? `<span class="small">${F.icon} ${esc(F.label)}</span>` : ''}${done ? '<span class="small muted">searched</span>' : ''}</button>`; });
       h += `</div>`;
     }
     return h;
@@ -265,79 +335,140 @@ const TABS = {
   notebook() {
     const c = curCase(), n = CS.n, where = V.nb === 'where', key = where ? 'sr' : 'si', cols = where ? CS.rooms : CS.items;
     let h = `<div class="seg"><button class="${where ? 'on' : ''}" data-a="nb" data-v="where">Where (rooms)</button><button class="${where ? '' : 'on'}" data-a="nb" data-v="what">What (things)</button></div>
-      <table class="nb"><tr><th class="nm"></th>${cols.map(x => `<th title="${esc(x.name)}"><span class="e">${x.e}</span>${esc(x.name.split(' ').pop())}</th>`).join('')}<th title="Thief?"><span class="e">🕵️</span>Thief?</th></tr>`;
+      <table class="nb"><tr><th class="nm"></th>${cols.map(x => `<th title="${esc(x.name)}"><span class="e">${x.e}</span>${esc(x.name.replace(/'s$/, '').split(' ').pop())}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>`;
     CS.sus.forEach((p, s) => {
-      h += `<tr><td class="nm">${portrait(p, 30)}<span>${esc(p.name.replace(/^(The Great|Duchess|Professor|Mrs\.|Mr\.|Captain|Nana|Madame|Doctor) /, ''))}</span></td>`;
+      const words = p.name.split(' '), short = words.length > 1 ? words[words.length - 1] : p.name;
+      h += `<tr><td class="nm">${portrait(p, 30)}<span>${esc(short)}</span></td>`;
       for (let x = 0; x < n; x++) { const v = c.note[key][s * n + x]; h += `<td class="c ${v === 1 ? 'x' : v === 2 ? 'y' : ''}" data-a="cell" data-v="${key}:${s * n + x}">${v === 1 ? '✗' : v === 2 ? '✓' : ''}</td>`; }
       const tv = c.note.t[s]; h += `<td class="c thf ${tv === 1 ? 'x' : tv === 2 ? 'q' : ''}" data-a="cell" data-v="t:${s}">${tv === 1 ? '✗' : tv === 2 ? '❓' : ''}</td></tr>`;
     });
-    h += `</table><p class="muted small center">Tap a box: ✗ means "no", tap again for ✓ "yes", again to clear. In the thief column: ✗ not the thief, ❓ suspicious.<br>Remember: one guest per room, one thing per guest.</p>
+    return h + `</table><p class="muted small center">Tap a box: ✗ means "no", tap again for ✓ "yes", again to clear. In the thief column: ✗ not the thief, ❓ suspicious.<br>Remember: one suspect per room, one thing per suspect.</p>
       <button class="btn ghost" data-a="clearnb">Clear notebook</button>`;
-    return h;
   },
   file() {
-    const cr = CS.crime;
+    const cr = CS.crime, Z = CS.theme.zone, F = CS.theme.flag;
     return `<div class="card"><h3>${esc(cr.e)} The crime</h3><p><b>${esc(cr.what)}</b> vanished from ${esc(cr.from)} at midnight.</p>
-      <p class="small">Every guest was in a <b>different room</b> and held a <b>different thing</b>. The thief hid it in their room and used their thing.</p></div>
-      <div class="card"><h3>Guests</h3>${CS.sus.map(p => `<div class="who">${portrait(p, 52)}<div><b>${esc(p.name)}</b><div class="muted small">${esc(p.role)}</div>${tagsOfSuspect(p).map(t => `<span class="tag">${esc(t)}</span>`).join('') || '<span class="tag">no hat, glasses, mustache or scarf</span>'}</div></div>`).join('')}</div>
-      <div class="card"><h3>Rooms</h3>${CS.rooms.map(r => `<div class="who"><span style="font-size:28px">${r.e}</span><div><b>${esc(r.name)}</b><br><span class="tag">${r.up ? 'upstairs' : 'downstairs'}</span>${r.fire ? '<span class="tag">🔥 fireplace</span>' : '<span class="tag">no fireplace</span>'}</div></div>`).join('')}</div>
-      <div class="card"><h3>Things the guests were holding</h3>${CS.items.map(it => `<div class="who"><span style="font-size:28px">${it.e}</span><div><b>${esc(it.name[0].toUpperCase() + it.name.slice(1))}</b><br>${tagsOfItem(it).map(t => `<span class="tag">${esc(t)}</span>`).join('') || '<span class="tag">nothing special</span>'}</div></div>`).join('')}</div>`;
+      <p class="small">Every suspect was in a <b>different room</b> and held a <b>different thing</b>. The thief hid it in their room and used their thing.</p></div>
+      <div class="card"><h3>Suspects</h3>${CS.sus.map(p => `<div class="who">${portrait(p, 52)}<div><b>${esc(p.name)}</b><div class="muted small">${esc(p.role)}</div>${[...p.t].map(k => `<span class="tag">${esc(M.TRAITS[k].label)}</span>`).join('') || '<span class="tag">no hat, glasses, mustache or scarf</span>'}</div></div>`).join('')}</div>
+      <div class="card"><h3>Rooms</h3>${CS.rooms.map(r => `<div class="who"><span style="font-size:28px">${r.e}</span><div><b>${esc(r.name)}</b><br><span class="tag">${esc(r.up ? Z.up : Z.down)}</span><span class="tag">${r.flag ? F.icon + ' ' + esc(F.label) : 'no ' + esc(F.label)}</span></div></div>`).join('')}</div>
+      <div class="card"><h3>Things the suspects were holding</h3>${CS.items.map(it => `<div class="who"><span style="font-size:28px">${it.e}</span><div><b>${esc(it.name[0].toUpperCase() + it.name.slice(1))}</b><br>${[...it.t].map(k => `<span class="tag">${esc(M.TAGS[k].who)}</span>`).join('') || '<span class="tag">nothing special</span>'}</div></div>`).join('')}</div>`;
   },
   accuse() {
     const c = curCase(), a = V.acc;
     if (c.done) return `<div class="card center"><p>This case is closed.</p></div><button class="btn" data-a="showresult">See the ending</button>`;
     const tries = 3 - c.guesses.length;
-    let h = `<p class="center">Agree as a team first! <b>${tries}</b> ${tries === 1 ? 'try' : 'tries'} left.</p>`;
-    if (c.guesses.length) { const g = c.guesses[c.guesses.length - 1]; h += `<div class="card center">Last try: <b>${g.right} of 3</b> right. The thief is still loose!</div>`; }
+    let h = `<p class="center">Agree as a team, then <b>everyone</b> enters the same answer. <b>${tries}</b> ${tries === 1 ? 'try' : 'tries'} left.</p>`;
+    if (c.guesses.length) h += `<div class="card center">Last try: <b>${c.guesses[c.guesses.length - 1].right} of 3</b> right. The thief is still loose!</div>`;
     h += `<h3>WHO took it?</h3><div class="pick">${CS.sus.map((p, s) => `<button class="opt${a.s === s ? ' on' : ''}" data-a="as" data-v="${s}">${portrait(p, 48)}<b>${esc(p.name)}</b></button>`).join('')}</div>`;
     h += `<h3>WHERE did they hide it?</h3><div class="pick">${CS.rooms.map((r, k) => `<button class="opt${a.r === k ? ' on' : ''}" data-a="ar" data-v="${k}"><span class="big">${r.e}</span><b>${esc(r.name)}</b></button>`).join('')}</div>`;
     h += `<h3>WHAT did they use?</h3><div class="pick">${CS.items.map((it, k) => `<button class="opt${a.i === k ? ' on' : ''}" data-a="ai" data-v="${k}"><span class="big">${it.e}</span><b>${esc(it.name)}</b></button>`).join('')}</div>`;
-    h += `<button class="btn red" data-a="accuse" ${a.s >= 0 && a.r >= 0 && a.i >= 0 ? '' : 'disabled'}>⚖️ Accuse!</button>
-      <button class="btn ghost small" data-a="giveup">Another phone already solved it? Show the answer</button>`;
-    return h;
+    return h + `<button class="btn red" data-a="accuse" ${a.s >= 0 && a.r >= 0 && a.i >= 0 ? '' : 'disabled'}>⚖️ Accuse!</button>
+      <button class="btn ghost small" data-a="giveup">Give up and show the answer</button>`;
   },
 };
 const TABLIST = [['clues', '📜', 'Clues'], ['search', '🔦', 'Search'], ['notebook', '📓', 'Notebook'], ['file', '🗂️', 'Case file'], ['accuse', '⚖️', 'Accuse']];
 
 function render() {
+  if (!me() && !['who', 'addprof'].includes(V.screen)) V.screen = 'who';
   if (V.screen === 'game' && (!CS || !curCase() || curCase().seat < 0)) V.screen = 'home';
   $app.innerHTML = SCREENS[V.screen]();
   const inGame = V.screen === 'game';
   $tabs.hidden = !inGame;
   if (inGame) $tabs.innerHTML = TABLIST.map(([k, e, l]) => `<button class="${V.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}"><span>${e}</span>${l}</button>`).join('');
-  if (V.screen === 'join') { const i = document.getElementById('codein'); if (i) { i.addEventListener('input', () => { V.joinCode = i.value; }); i.addEventListener('keydown', e => { if (e.key === 'Enter') ACT.dojoin(); }); } }
+  const ci = document.getElementById('codein'); if (ci) { ci.addEventListener('input', () => { V.joinCode = ci.value; }); ci.addEventListener('keydown', e => { if (e.key === 'Enter') ACT.dojoin(); }); }
+  const pn = document.getElementById('pname'); if (pn) pn.addEventListener('input', () => { V.newProf.name = pn.value; });
 }
-function go(screen) { V.screen = screen; render(); window.scrollTo(0, 0); }
+function go(screen) { V.screen = screen; V.err = ''; render(); window.scrollTo(0, 0); }
 function modal(html) { $modal.innerHTML = `<div class="card">${html}</div>`; $modal.hidden = false; }
 function closeModal() { $modal.hidden = true; $modal.innerHTML = ''; }
+
+// ---------- backup codes ----------
+function b64e(s) { return btoa(unescape(encodeURIComponent(s))); }
+function b64d(s) { return decodeURIComponent(escape(atob(s))); }
+function backupCode(p) { return 'MMB1.' + b64e(JSON.stringify(p)); }
+function readBackup(txt) {
+  const t = String(txt || '').replace(/\s+/g, ''); const i = t.indexOf('MMB1.'); if (i < 0) return null;
+  try { return cleanProfile(JSON.parse(b64d(t.slice(i + 5)))); } catch (e) { return null; }
+}
+function mergeProfile(inc) {
+  const old = D.profiles[inc.id] || Object.values(D.profiles).find(p => p.name.toLowerCase() === inc.name.toLowerCase());
+  if (!old) { D.profiles[inc.id] = inc; return inc; }
+  for (const k of Object.keys(old.prog)) old.prog[k] = old.prog[k].map((v, j) => Math.max(v, inc.prog[k][j]));   // restoring never loses stars
+  for (const r of ['solved', 'stars', 'played']) old.record[r] = Math.max(old.record[r], inc.record[r]);
+  for (const [code, c] of Object.entries(inc.cases)) if (!old.cases[code]) old.cases[code] = c;
+  return old;
+}
 
 // ---------- actions ----------
 const ACT = {
   home() { closeModal(); go('home'); },
-  how() { go('how'); },
-  new() { V.draft = { players: 0, lvl: -1 }; go('new'); },
-  join() { V.err = ''; V.joinCode = ''; go('join'); setTimeout(() => { const i = document.getElementById('codein'); if (i) i.focus(); }, 50); },
+  how() { go('how'); }, share() { go('share'); }, book() { go('book'); },
+  who() { closeModal(); go('who'); },
+  pickme(v) { if (D.profiles[v]) { useProfile(v); go('home'); } },
+  addprof() { V.newProf = { name: '', av: AVATARS[Object.keys(D.profiles).length % AVATARS.length], junior: 0 }; go('addprof'); setTimeout(() => { const i = document.getElementById('pname'); if (i) i.focus(); }, 50); },
+  pav(v) { if (AVATARS.includes(v)) V.newProf.av = v; render(); },
+  pjun() { V.newProf.junior = V.newProf.junior ? 0 : 1; render(); },
+  saveprof() {
+    const n = V.newProf, name = n.name.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 20);
+    if (!name) { V.err = 'Type a name first.'; render(); return; }
+    if (Object.values(D.profiles).some(p => p.name.toLowerCase() === name.toLowerCase())) { V.err = 'There is already a detective with that name here.'; render(); return; }
+    const p = cleanProfile({ id: newId(), name, av: n.av, junior: n.junior, made: Date.now() }); D.profiles[p.id] = p; useProfile(p.id); go('home');
+  },
+  profile() { go('profile'); },
+  togjun() { const p = me(); p.junior = p.junior ? 0 : 1; save(); render(); },
+  delprof() { const p = me(); modal(`<h3>Delete ${esc(p.name)}?</h3><p>Their stars and progress on this device will be gone for good (unless you have a backup code).</p><div class="row"><button class="btn ghost" data-a="close">Keep</button><button class="btn red" data-a="delyes">Delete</button></div>`); },
+  delyes() { delete D.profiles[D.me]; D.me = null; CS = null; save(); closeModal(); go('who'); },
+  backup() {
+    const p = me();
+    modal(`<h3>💾 Backup code for ${esc(p.name)}</h3><p class="small">Keep this somewhere safe (Notes, or a text to yourself). On any device, tap <b>Restore from a backup code</b> and paste it in.</p>
+      <textarea class="text-in" rows="5" readonly id="bk">${esc(backupCode(p))}</textarea><div class="err" id="bkmsg"></div>
+      <div class="row"><button class="btn ghost" data-a="close">Done</button><button class="btn" data-a="copybk">${navigator.share ? 'Share' : 'Copy'}</button></div>`);
+  },
+  copybk() {
+    const t = document.getElementById('bk').value, msg = document.getElementById('bkmsg');
+    if (navigator.share) { navigator.share({ title: 'Midnight at the Manor backup', text: t }).catch(() => {}); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { msg.textContent = 'Copied!'; }, () => { document.getElementById('bk').select(); msg.textContent = 'Selected: copy it now.'; });
+  },
+  restore() {
+    modal(`<h3>Restore from a backup code</h3><p class="small">Paste the whole code (it starts with MMB1.). Nothing is lost: stars are only ever added.</p>
+      <textarea class="text-in" rows="5" id="rs" placeholder="MMB1...."></textarea><div class="err" id="rsmsg"></div>
+      <div class="row"><button class="btn ghost" data-a="close">Cancel</button><button class="btn" data-a="restoreyes">Restore</button></div>`);
+  },
+  restoreyes() {
+    const p = readBackup(document.getElementById('rs').value);
+    if (!p) { document.getElementById('rsmsg').textContent = 'That is not a backup code. Paste the whole thing, starting with MMB1.'; return; }
+    const got = mergeProfile(p); useProfile(got.id); closeModal(); go('home');
+  },
+  join() { V.joinCode = ''; go('join'); setTimeout(() => { const i = document.getElementById('codein'); if (i) i.focus(); }, 50); },
   resume() { V.tab = 'clues'; go('game'); },
-  dp(v) { V.draft.players = +v; render(); },
-  dl(v) { V.draft.lvl = +v; render(); },
+  theme(v) { const t = +v; if (!(t >= 0 && t < NTH)) return; V.theme = t; go('levels'); },
+  level(v) { const l = +v; if (!(l >= 0 && l < 10) || !unlocked(me(), V.theme, l)) return; V.draft = { players: 0, juniors: 0, level: l }; go('setup'); },
+  surprise() {
+    const p = me(), t = Math.floor(Math.random() * NTH), pr = p.prog[M.THEMES[t].key];
+    let l = pr.findIndex(s => s === 0); if (l < 0) l = Math.floor(Math.random() * 10);
+    V.theme = t; V.draft = { players: 0, juniors: 0, level: l }; go('setup');
+  },
+  dp(v) { V.draft.players = +v; V.draft.juniors = Math.min(V.draft.juniors, +v); render(); },
+  dj(v) { V.draft.juniors = Math.min(+v, V.draft.players); render(); },
   create() {
-    const d = V.draft; if (!d.players || d.lvl < 0) return;
-    let code; do { code = M.makeCode(d.players, d.lvl); } while (D.cases[code]);
+    const d = V.draft; if (!d.players) return; const p = me();
+    let code; do { code = M.makeCode({ theme: V.theme, level: d.level, players: d.players, juniors: d.juniors }); } while (p.cases[code]);
     openCase(code); go('code');
   },
+  nextcase() { V.theme = CS.themeIdx; V.draft = { players: CS.players, juniors: CS.juniors, level: CS.level + 1 }; go('setup'); },
   dojoin() {
     const i = document.getElementById('codein'); const raw = i ? i.value : V.joinCode; const info = M.readCode(raw);
-    if (info.error) { V.err = info.error; V.joinCode = raw; render(); return; }
+    if (info.error) { V.joinCode = raw; V.screen = 'join'; V.err = info.error; render(); return; }
     openCase(info.code); const c = curCase();
     if (c.seat >= 0 && !c.done) { V.tab = 'clues'; go('game'); } else go(c.done ? 'result' : 'badge');
   },
-  tobadge() { if (CS.players === 1) { curCase().seat = 0; save(); go('intro'); } else go('badge'); },
-  seat(v) { curCase().seat = +v; save(); render(); },
+  tobadge() { if (CS.players === 1) { ACT.seat('0'); go('intro'); } else go('badge'); },
+  seat(v) { const c = curCase(), s = +v; if (!(s >= 0 && s < CS.players)) return; c.seat = s; if (s < CS.juniors) c.help = 1; save(); if (V.screen === 'badge') render(); },
   tointro() { if (curCase().seat >= 0) go('intro'); },
   start() { V.tab = 'clues'; go('game'); },
-  tab(v) { if (!TABS[v]) return; V.tab = v; if (V.screen !== 'game') V.screen = 'game'; render(); window.scrollTo(0, 0); },
+  tab(v) { if (!TABS[v]) return; V.tab = v; V.screen = 'game'; render(); window.scrollTo(0, 0); },
   help() { const c = curCase(); c.help = c.help ? 0 : 1; save(); render(); },
-  say(v) { const cl = myClues()[+v]; if (!cl) return; const c = curCase(); say(M.clueText(cl, CS) + (c.help ? ' ' + M.hintText(cl, CS).replace('✗', 'a cross') : '')); },
+  say(v) { const cl = myClues()[+v]; if (!cl) return; say(M.clueText(cl, CS) + (curCase().help ? ' ' + M.hintText(cl, CS).replace(/✗/g, 'a cross') : '')); },
   sound() { D.settings.sound = D.settings.sound ? 0 : 1; save(); if (D.settings.sound) soundOn(); else soundOff(); render(); },
   searchroom(v) {
     const c = curCase(), r = +v; if (c.done || left() <= 0 || V.searching >= 0 || !(r >= 0 && r < CS.n)) return;
@@ -345,32 +476,31 @@ const ACT = {
     setTimeout(() => { c.searched.push(r); c.found++; save(); V.searching = -1; V.fresh = CS.start + c.found - 1; V.tab = 'clues'; render(); window.scrollTo(0, 0); chime(true); }, 1300);
   },
   nb(v) { V.nb = v === 'what' ? 'what' : 'where'; render(); },
-  cell(v) {
-    const [k, idx] = v.split(':'), c = curCase(), arr = c.note[k]; if (!arr || !(+idx >= 0 && +idx < arr.length)) return;
-    arr[+idx] = (arr[+idx] + 1) % 3; save(); render();
-  },
+  cell(v) { const [k, idx] = String(v).split(':'), arr = curCase().note[k]; if (!arr || !(+idx >= 0 && +idx < arr.length)) return; arr[+idx] = (arr[+idx] + 1) % 3; save(); render(); },
   clearnb() { modal(`<h3>Clear the notebook?</h3><p>All your ✗ and ✓ marks for this case will be wiped.</p><div class="row"><button class="btn ghost" data-a="close">Keep them</button><button class="btn red" data-a="clearyes">Clear</button></div>`); },
   clearyes() { const c = curCase(), n = CS.n; c.note = { sr: Array(n * n).fill(0), si: Array(n * n).fill(0), t: Array(n).fill(0) }; save(); closeModal(); render(); },
   close() { closeModal(); },
-  as(v) { V.acc.s = +v; render(); },
-  ar(v) { V.acc.r = +v; render(); },
-  ai(v) { V.acc.i = +v; render(); },
+  as(v) { V.acc.s = +v; render(); }, ar(v) { V.acc.r = +v; render(); }, ai(v) { V.acc.i = +v; render(); },
   accuse() {
     const a = V.acc; if (a.s < 0 || a.r < 0 || a.i < 0) return;
     modal(`<h3>Is the whole team agreed?</h3><p>${portrait(CS.sus[a.s], 40)} <b>${esc(CS.sus[a.s].name)}</b>, hid it in the <b>${esc(roomName(a.r))}</b>, using the <b>${esc(itemName(a.i))}</b>.</p>
       <div class="row"><button class="btn ghost" data-a="close">Not yet</button><button class="btn red" data-a="accuseyes">Accuse!</button></div>`);
   },
   accuseyes() {
-    closeModal(); const c = curCase(), a = V.acc, t = CS.thief;
+    closeModal(); const c = curCase(), a = V.acc, t = CS.thief, p = me();
     const right = (a.s === t) + (a.r === CS.roomOf[t]) + (a.i === CS.itemOf[t]);
-    c.guesses.push({ s: a.s, r: a.r, i: a.i, right });
-    if (right === 3) { c.done = 1; c.stars = 4 - c.guesses.length; D.record.solved++; D.record.stars += c.stars; save(); chime(true); go('result'); return; }
+    c.guesses.push({ s: a.s, r: a.r, i: a.i, right }); V.acc = { s: -1, r: -1, i: -1 };
+    if (right === 3) {
+      c.done = 1; c.stars = 4 - c.guesses.length; p.record.solved++; p.record.stars += c.stars;
+      const pr = p.prog[CS.theme.key]; pr[CS.level] = Math.max(pr[CS.level], c.stars);
+      save(); chime(true); go('result'); return;
+    }
     chime(false);
     if (c.guesses.length >= 3) { c.done = 2; save(); go('result'); return; }
-    save(); V.acc = { s: -1, r: -1, i: -1 }; render(); window.scrollTo(0, 0);
+    save(); render(); window.scrollTo(0, 0);
   },
-  giveup() { modal(`<h3>Show the answer?</h3><p>Only do this if your team already solved it on another phone, or you want to give up.</p><div class="row"><button class="btn ghost" data-a="close">Keep playing</button><button class="btn red" data-a="giveyes">Show it</button></div>`); },
-  giveyes() { const c = curCase(); c.done = 2; save(); closeModal(); go('result'); },
+  giveup() { modal(`<h3>Show the answer?</h3><p>The case ends with no stars.</p><div class="row"><button class="btn ghost" data-a="close">Keep playing</button><button class="btn red" data-a="giveyes">Show it</button></div>`); },
+  giveyes() { curCase().done = 2; save(); closeModal(); go('result'); },
   showresult() { go('result'); },
 };
 document.addEventListener('click', e => {
@@ -381,6 +511,7 @@ $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) soundOff(); else if (D.settings.sound && AC) soundOn(); });
 document.addEventListener('pointerdown', () => { if (D.settings.sound && !rainNode) soundOn(); }, { passive: true });
 
+V.screen = me() ? 'home' : 'who';
 render();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
