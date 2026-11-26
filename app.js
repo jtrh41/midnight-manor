@@ -265,7 +265,7 @@ const SCREENS = {
       <div class="card"><h3>How hard?</h3>${M.DIFFS.map((F, k) => `<button class="opt diffopt${d.diff === k ? ' on' : ''}" data-a="dd" data-v="${k}"><b>${F.e} ${esc(F.name)}</b><span class="small muted">${esc(F.blurb)}</span></button>`).join('')}
       <p class="small muted">Junior detectives always get simple clues, whatever you pick.</p></div>
       <div class="card"><h3>How many detectives?</h3><p class="muted small">Everyone playing on their own phone or iPad, including you.</p>
-      <div class="pick">${[1, 2, 3, 4, 5].map(k => `<button class="opt${d.players === k ? ' on' : ''}" data-a="dp" data-v="${k}"><span class="big">${k}</span><b>${k === 1 ? 'Just me' : k + ' players'}</b></button>`).join('')}</div></div>
+      <div class="pick">${[1, 2, 3, 4, 5, 6, 7, 8].map(k => `<button class="opt${d.players === k ? ' on' : ''}" data-a="dp" data-v="${k}"><span class="big">${k}</span><b>${k === 1 ? 'Just me' : k + ' players'}</b></button>`).join('')}</div></div>
       ${d.players ? `<div class="card"><h3>How many are junior detectives? 🐣</h3><p class="muted small">Juniors get simpler clues, with the helper and read-aloud. Grown-ups get the harder ones.</p>
       <div class="pick">${Array.from({ length: d.players + 1 }, (_, k) => `<button class="opt${d.juniors === k ? ' on' : ''}" data-a="dj" data-v="${k}"><span class="big">${k}</span><b>${k === 0 ? 'None' : k === d.players ? 'Everyone' : k + ' junior' + (k > 1 ? 's' : '')}</b></button>`).join('')}</div></div>` : ''}
       <button class="btn" data-a="create" ${d.players ? '' : 'disabled'}>Open the case file</button>
