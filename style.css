@@ -113,3 +113,7 @@ textarea.text-in{font:13px ui-monospace,Menlo,monospace;word-break:break-all;res
 .lvl.locked{opacity:.45}
 .clue.big{font-size:22px}
 svg.qr{width:min(260px,70vw);height:auto;border-radius:10px;margin:8px auto;display:block}
+
+.opt.diffopt{width:100%;text-align:left;margin:6px 0;padding:10px 14px;min-height:56px;display:block}
+.opt.diffopt b{font-size:17px}
+.lvl .small{line-height:1.2}

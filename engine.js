@@ -5,10 +5,11 @@
 (function (root) {
 'use strict';
 const TH = (typeof module !== 'undefined' && module.exports) ? require('./themes.js') : root.ManorThemes;
-const GEN = 2;
+const GEN = 3;
 const ALPHA = 'BCDFGHJKLMNPQRSTVWXZ';          // no vowels: codes never spell words, no 0/O or 1/I mix-ups
 const THEME_SLOTS = 12, LEVEL_SLOTS = 10, MAX_PLAYERS = 5;
-const COMBOS = THEME_SLOTS * LEVEL_SLOTS * MAX_PLAYERS * 6;
+const DIFF_SLOTS = 4;
+const COMBOS = THEME_SLOTS * LEVEL_SLOTS * DIFF_SLOTS * MAX_PLAYERS * 6;
 const SEEDS = Math.floor(Math.pow(20, 5) / COMBOS);
 const START = 2, MIN_ROUNDS = 3, MAX_ROUNDS = 6;
 // 10 levels per theme. n = suspects, w = clue style (0 simple, 1 tricky, 2 toughest), extra = bonus helper clues
@@ -17,6 +18,13 @@ const LEVELS = [
   { n: 5, w: 1, extra: 0 }, { n: 5, w: 2, extra: 0 }, { n: 6, w: 1, extra: 1 }, { n: 6, w: 2, extra: 0 }, { n: 6, w: 2, extra: 0 },
 ];
 const STYLE = ['Easy clues', 'Tricky clues', 'Toughest clues'];
+// difficulty chosen per case. style: clue kinds; extra: change to helper clues; minRounds: fewer spare clues = shorter candle; tries: accusations allowed
+const DIFFS = [
+  { key: 'easy',   name: 'Easy',      e: '🟢', style: () => 0,                    extra: L => L.extra + 3, minRounds: 4, tries: 3, blurb: 'simplest clues, extra helper clues, longest candle' },
+  { key: 'medium', name: 'Medium',    e: '🟡', style: L => L.w,                   extra: L => L.extra,     minRounds: 3, tries: 3, blurb: 'the usual mix of clues for this case' },
+  { key: 'hard',   name: 'Hard',      e: '🟠', style: L => Math.min(2, L.w + 1),  extra: () => 0,          minRounds: 2, tries: 3, blurb: 'trickier clues, no helper clues, shorter candle' },
+  { key: 'vhard',  name: 'Very hard', e: '🔴', style: () => 2,                    extra: () => 0,          minRounds: 2, tries: 2, blurb: 'toughest clues, no spare clues, only 2 accusations' },
+];
 const BADGES = [
   { e: '🦉', name: 'Owl' }, { e: '🦊', name: 'Fox' }, { e: '🐶', name: 'Hound' }, { e: '🐱', name: 'Cat' }, { e: '🦇', name: 'Bat' },
 ];
@@ -41,10 +49,10 @@ function range(n) { return Array.from({ length: n }, (_, i) => i); }
 
 // ---------- codes: 5 letters of data + 1 check letter ----------
 function checkLetter(v) { return ALPHA[hash(v * 31 + GEN * 977) % 20]; }
-function pack(o) { return (((o.seed * THEME_SLOTS + o.theme) * LEVEL_SLOTS + o.level) * MAX_PLAYERS + (o.players - 1)) * 6 + o.juniors; }
+function pack(o) { return ((((o.seed * THEME_SLOTS + o.theme) * LEVEL_SLOTS + o.level) * DIFF_SLOTS + o.diff) * MAX_PLAYERS + (o.players - 1)) * 6 + o.juniors; }
 function makeCode(o, rnd) {
   const seed = Math.floor((rnd || Math.random)() * SEEDS);
-  let v = pack({ seed, theme: o.theme, level: o.level, players: o.players, juniors: Math.min(o.juniors | 0, o.players) }), s = '';
+  let v = pack({ seed, theme: o.theme, level: o.level, diff: o.diff | 0, players: o.players, juniors: Math.min(o.juniors | 0, o.players) }), s = '';
   const check = checkLetter(v);
   for (let k = 0; k < 5; k++) { s = ALPHA[v % 20] + s; v = Math.floor(v / 20); }
   return s + check;
@@ -56,9 +64,9 @@ function readCode(raw) {
   for (let k = 0; k < 5; k++) { const d = ALPHA.indexOf(c[k]); if (d < 0) return { error: 'That code has a letter that is never used in codes (codes have no vowels). Check it again.' }; v = v * 20 + d; }
   if (checkLetter(v) !== c[5]) return { error: 'That code does not match. Check each letter. If it is right, close and reopen the game on both devices so they have the same version.' };
   let x = v; const juniors = x % 6; x = Math.floor(x / 6); const players = x % MAX_PLAYERS + 1; x = Math.floor(x / MAX_PLAYERS);
-  const level = x % LEVEL_SLOTS; x = Math.floor(x / LEVEL_SLOTS); const theme = x % THEME_SLOTS; const seed = Math.floor(x / THEME_SLOTS);
+  const diff = x % DIFF_SLOTS; x = Math.floor(x / DIFF_SLOTS); const level = x % LEVEL_SLOTS; x = Math.floor(x / LEVEL_SLOTS); const theme = x % THEME_SLOTS; const seed = Math.floor(x / THEME_SLOTS);
   if (seed >= SEEDS || theme >= TH.THEMES.length || juniors > players) return { error: 'That code does not match. Check each letter.' };
-  return { code: c, seed, theme, level, players, juniors };
+  return { code: c, seed, theme, level, diff, players, juniors };
 }
 
 // ---------- the solver: only deductions a person can make with the notebook ----------
@@ -164,8 +172,8 @@ function buildCase(code) {
   const info = typeof code === 'string' ? readCode(code) : code;
   if (info.error) throw new Error(info.error);
   const T = TH.THEMES[info.theme], LV = LEVELS[info.level], n = LV.n, P = info.players, J = info.juniors;
-  const style = J >= P ? 0 : LV.w;                     // all juniors: keep every clue simple
-  const rnd = mulberry(hash(info.seed * 7919 + GEN * 104729 + info.theme * 131 + info.level * 31));
+  const DF = DIFFS[info.diff | 0], style = J >= P ? 0 : DF.style(LV);   // all juniors: keep every clue simple
+  const rnd = mulberry(hash(info.seed * 7919 + GEN * 104729 + info.theme * 131 + info.level * 31 + (info.diff | 0) * 7));
   const crime = T.crimes[Math.floor(rnd() * T.crimes.length)];
   const sus = shuffle(range(T.sus.length), rnd).slice(0, n).map(k => T.sus[k]);
   let rooms;
@@ -177,7 +185,7 @@ function buildCase(code) {
   rooms.sort((a, b) => b.up - a.up);
   const items = shuffle(T.items.slice(), rnd).slice(0, n).map(k => TH.ITEMS[k]);
   const roomOf = shuffle(range(n), rnd), itemOf = shuffle(range(n), rnd), thief = Math.floor(rnd() * n);
-  const cs = { code: info.code, gen: GEN, seed: info.seed, theme: T, themeIdx: info.theme, level: info.level, levelInfo: LV, style, players: P, juniors: J, n, crime, sus, rooms, items, roomOf, itemOf, thief };
+  const cs = { code: info.code, gen: GEN, seed: info.seed, theme: T, themeIdx: info.theme, level: info.level, levelInfo: LV, diff: info.diff | 0, diffInfo: DF, tries: DF.tries, style, players: P, juniors: J, n, crime, sus, rooms, items, roomOf, itemOf, thief };
 
   const W = WEIGHTS[style], all = trueClues(cs, style), pool = all.filter(c => W[c.w]);
   for (const c of pool) c.key = -Math.log(1 - rnd()) / W[c.w];
@@ -203,7 +211,7 @@ function buildCase(code) {
   const essential = chosen.length;
   const unused = all.filter(c => !chosen.includes(c) && !giveaway(c, thief) && (W[c.w] || KID[c.w]));
   const helpers = shuffle(unused.filter(c => EASY[c.w]), rnd);
-  for (let k = 0; k < LV.extra && helpers.length; k++) chosen.push(helpers.shift());
+  for (let k = 0; k < DF.extra(LV) && helpers.length; k++) chosen.push(helpers.shift());
 
   // deal: easy clues can go to anyone, harder ones only to grown-up seats; keep piles even
   const piles = range(P).map(() => []), isKid = s => s < J;
@@ -216,7 +224,7 @@ function buildCase(code) {
     seats.sort((a, b) => piles[a].length - piles[b].length || (isKid(b) - isKid(a)) || a - b);
     piles[seats[0]].push(c);
   }
-  const per = Math.max(START + MIN_ROUNDS, ...piles.map(p => p.length));
+  const per = Math.max(START + DF.minRounds, ...piles.map(p => p.length));
   const rest = unused.filter(c => !chosen.includes(c));
   const spareKid = shuffle(rest.filter(c => KID[c.w]), rnd), spareAny = shuffle(rest.slice(), rnd);
   for (let s = 0; s < P; s++) {
@@ -286,7 +294,7 @@ function storyText(cs) {
   ] };
 }
 
-const API = { GEN, ALPHA, LEVELS, STYLE, BADGES, TRAITS, TAGS, THEMES: TH.THEMES, ITEMS: TH.ITEMS, START,
+const API = { GEN, ALPHA, LEVELS, STYLE, DIFFS, BADGES, TRAITS, TAGS, THEMES: TH.THEMES, ITEMS: TH.ITEMS, START,
   makeCode, readCode, buildCase, solve, isSolved, clueText, hintText, storyText, trueClues, mulberry, hash, KID };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.Manor = API;
 })(this);

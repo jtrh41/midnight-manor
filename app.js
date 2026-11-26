@@ -18,7 +18,7 @@ function cleanCase(code, c) {
   const arr = (a, len) => Array.isArray(a) && a.length === len && a.every(x => x === 0 || x === 1 || x === 2) ? a : Array(len).fill(0);
   return { seat: clampInt(c.seat, -1, P - 1, -1), found: clampInt(c.found, 0, 6, 0), searched: Array.isArray(c.searched) ? c.searched.filter(x => Number.isInteger(x) && x >= 0 && x < n).slice(0, 6) : [],
     note: { sr: arr(note.sr, n * n), si: arr(note.si, n * n), t: arr(note.t, n) },
-    guesses: Array.isArray(c.guesses) ? c.guesses.filter(g => g && typeof g === 'object').slice(0, 3).map(g => ({ s: clampInt(g.s, 0, 5, 0), r: clampInt(g.r, 0, 5, 0), i: clampInt(g.i, 0, 5, 0), right: clampInt(g.right, 0, 3, 0) })) : [],
+    guesses: Array.isArray(c.guesses) ? c.guesses.filter(g => g && typeof g === 'object').slice(0, M.DIFFS[info.diff].tries).map(g => ({ s: clampInt(g.s, 0, 5, 0), r: clampInt(g.r, 0, 5, 0), i: clampInt(g.i, 0, 5, 0), right: clampInt(g.right, 0, 3, 0) })) : [],
     done: clampInt(c.done, 0, 2, 0), stars: clampInt(c.stars, 0, 3, 0), help: c.help ? 1 : 0, at: Number.isFinite(c.at) ? c.at : Date.now() };
 }
 function newId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -26,13 +26,15 @@ function cleanProfile(p) {
   if (!p || typeof p !== 'object') return null;
   const name = String(p.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 20); if (!name) return null;
   const prog = {};
-  for (const T of M.THEMES) { const a = p.prog && Array.isArray(p.prog[T.key]) ? p.prog[T.key] : []; prog[T.key] = Array.from({ length: 10 }, (_, k) => clampInt(a[k], 0, 3, 0)); }
+  const best = {};
+  for (const T of M.THEMES) { const a = p.prog && Array.isArray(p.prog[T.key]) ? p.prog[T.key] : []; prog[T.key] = Array.from({ length: 10 }, (_, k) => clampInt(a[k], 0, 3, 0));
+    const b = p.best && Array.isArray(p.best[T.key]) ? p.best[T.key] : []; best[T.key] = Array.from({ length: 10 }, (_, k) => clampInt(b[k], -1, 3, prog[T.key][k] > 0 ? 1 : -1)); }
   const cases = {};
   if (p.cases && typeof p.cases === 'object') for (const [code, c] of Object.entries(p.cases)) { const cc = cleanCase(code, c); if (cc) cases[code] = cc; }
   const r = p.record && typeof p.record === 'object' ? p.record : {};
   return { id: /^[a-z0-9]{6,16}$/.test(p.id) ? p.id : newId(), name, av: AVATARS.includes(p.av) ? p.av : '🕵️', junior: p.junior ? 1 : 0,
     record: { solved: clampInt(r.solved, 0, 1e6, 0), stars: clampInt(r.stars, 0, 1e7, 0), played: clampInt(r.played, 0, 1e6, 0) },
-    prog, cases, cur: p.cur && cases[p.cur] ? p.cur : null, made: Number.isFinite(p.made) ? p.made : Date.now() };
+    prog, best, cases, cur: p.cur && cases[p.cur] ? p.cur : null, made: Number.isFinite(p.made) ? p.made : Date.now() };
 }
 function load() {
   let raw = null, d = null;
@@ -50,7 +52,7 @@ function save() {
 const me = () => D.me ? D.profiles[D.me] : null;
 
 // ---------- view state ----------
-const V = { screen: 'home', tab: 'clues', nb: 'where', theme: 0, draft: { players: 0, juniors: 0, level: 0 }, joinCode: '', err: '', acc: { s: -1, r: -1, i: -1 }, fresh: -1, searching: -1, newProf: { name: '', av: '🕵️', junior: 0 } };
+const V = { screen: 'home', tab: 'clues', nb: 'where', theme: 0, draft: { players: 0, juniors: 0, level: 0, diff: 1 }, joinCode: '', err: '', acc: { s: -1, r: -1, i: -1 }, fresh: -1, searching: -1, newProf: { name: '', av: '🕵️', junior: 0 } };
 let CS = null;
 function curCase() { const p = me(); return p && p.cur ? p.cases[p.cur] : null; }
 function openCase(code) {
@@ -167,7 +169,8 @@ function myClues() { const c = curCase(); if (!c || c.seat < 0) return []; retur
 function left() { return CS.rounds - curCase().found; }
 function unlocked(p, t, lvl) { return lvl === 0 || p.prog[M.THEMES[t].key][lvl - 1] > 0; }
 function themeStars(p, t) { return p.prog[M.THEMES[t].key].reduce((a, b) => a + b, 0); }
-function levelBlurb(l) { const L = M.LEVELS[l]; return `${L.n} suspects · ${M.STYLE[L.w]}`; }
+function levelBlurb(l) { const L = M.LEVELS[l]; return `${L.n} suspects`; }
+const diffTag = d => d >= 0 ? `${M.DIFFS[d].e} ${esc(M.DIFFS[d].name)}` : '';
 function clueCard(cl, idx, src, fresh) {
   const c = curCase(), hint = c.help ? M.hintText(cl, CS) : '';
   return `<div class="clue${fresh ? ' new' : ''}${isJuniorSeat() ? ' big' : ''}">${src ? `<div class="src">${esc(src)}</div>` : ''}<div>${esc(M.clueText(cl, CS))}</div>${hint ? `<div class="hint">💡 ${esc(hint)}</div>` : ''}
@@ -226,12 +229,12 @@ const SCREENS = {
   },
   how() {
     return `<h2>How to play</h2>
-      <div class="card"><p><b>1.</b> One person opens the <b>Case book</b>, picks a place and a case, and says how many detectives (and how many juniors) are playing. They get a 6-letter code.</p>
+      <div class="card"><p><b>1.</b> One person opens the <b>Case book</b>, picks a place, a case and how hard (Easy, Medium, Hard or Very hard), and says how many detectives (and how many juniors) are playing. They get a 6-letter code.</p>
       <p><b>2.</b> Everyone else taps <b>Join a case</b> and types the code. Each person picks a different badge. <b>Junior detectives pick a 🐣 junior badge</b>: those get simpler clues.</p>
       <p><b>3.</b> Each device shows <b>secret clues</b> only that detective can see. Read them out, or keep one back for a dramatic moment.</p>
       <p><b>4.</b> Each round, everyone <b>searches a room</b> for one more clue. The candle burns down with each search.</p>
       <p><b>5.</b> Mark what you learn in the <b>Notebook</b>: ✗ for "no", ✓ for "yes".</p>
-      <p><b>6.</b> When the team agrees, <b>everyone enters the team's answer</b> under Accuse: WHO took it, WHERE they hid it, WHAT they used. Three tries; fewer tries, more stars. Solving a case unlocks the next one.</p></div>
+      <p><b>6.</b> When the team agrees, <b>everyone enters the team's answer</b> under Accuse: WHO took it, WHERE they hid it, WHAT they used. You get 3 tries (2 on Very hard); fewer tries, more stars. Solving a case on any difficulty unlocks the next one.</p></div>
       <div class="card"><h3>The golden rule</h3><p>Every suspect was in a <b>different room</b> and held a <b>different thing</b>. The thief hid the treasure in the room they were in, and used the thing they were holding.</p>
       <p class="muted small">Every clue is true. Nobody's clues alone are enough. Works with no internet.</p></div>
       <button class="btn" data-a="home">Got it</button>`;
@@ -252,12 +255,15 @@ const SCREENS = {
     const p = me(), T = M.THEMES[V.theme], pr = p.prog[T.key];
     return `<h2>${T.e} ${esc(T.name)}</h2><p class="muted small">${esc(T.intro)}</p>
       <div class="levels">${pr.map((s, l) => { const ok = unlocked(p, V.theme, l);
-        return `<button class="lvl${ok ? '' : ' locked'}" data-a="level" data-v="${l}" ${ok ? '' : 'disabled'}><span class="ln">${ok ? l + 1 : '🔒'}</span><span class="small">${levelBlurb(l)}</span><span class="st">${starRow(s)}</span></button>`; }).join('')}</div>
+        return `<button class="lvl${ok ? '' : ' locked'}" data-a="level" data-v="${l}" ${ok ? '' : 'disabled'}><span class="ln">${ok ? l + 1 : '🔒'}</span><span class="small">${levelBlurb(l)}</span><span class="st">${starRow(s)}</span>${p.best[T.key][l] >= 0 ? `<span class="small">beat on ${diffTag(p.best[T.key][l])}</span>` : ''}</button>`; }).join('')}</div>
+      <p class="small muted center">You choose Easy, Medium, Hard or Very hard when you start a case. Beating a case on any of them unlocks the next.</p>
       <button class="btn ghost" data-a="book">Back to the case book</button>`;
   },
   setup() {
     const d = V.draft, T = M.THEMES[V.theme];
     return `<h2>${T.e} Case ${d.level + 1}</h2><p class="muted">${esc(T.name)} · ${levelBlurb(d.level)}</p>
+      <div class="card"><h3>How hard?</h3>${M.DIFFS.map((F, k) => `<button class="opt diffopt${d.diff === k ? ' on' : ''}" data-a="dd" data-v="${k}"><b>${F.e} ${esc(F.name)}</b><span class="small muted">${esc(F.blurb)}</span></button>`).join('')}
+      <p class="small muted">Junior detectives always get simple clues, whatever you pick.</p></div>
       <div class="card"><h3>How many detectives?</h3><p class="muted small">Everyone playing on their own phone or iPad, including you.</p>
       <div class="pick">${[1, 2, 3, 4, 5].map(k => `<button class="opt${d.players === k ? ' on' : ''}" data-a="dp" data-v="${k}"><span class="big">${k}</span><b>${k === 1 ? 'Just me' : k + ' players'}</b></button>`).join('')}</div></div>
       ${d.players ? `<div class="card"><h3>How many are junior detectives? 🐣</h3><p class="muted small">Juniors get simpler clues, with the helper and read-aloud. Grown-ups get the harder ones.</p>
@@ -267,7 +273,7 @@ const SCREENS = {
   },
   code() {
     const code = CS.code;
-    return `<h2 class="center">${esc(CS.crime.e)} ${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1}</p>
+    return `<h2 class="center">${esc(CS.crime.e)} ${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1} · ${diffTag(CS.diff)}</p>
       <div class="card center"><p>Case code</p><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>
       <p class="muted">${CS.players > 1 ? `Everyone else: tap <b>Join a case</b> and type this code.<br>${CS.players} detectives${CS.juniors ? `, ${CS.juniors} junior` : ''}.` : 'Playing solo.'}</p></div>
       <button class="btn" data-a="tobadge">${CS.players > 1 ? 'Everyone has it, pick my badge' : 'Begin'}</button>`;
@@ -280,7 +286,7 @@ const SCREENS = {
   },
   badge() {
     const c = curCase(), p = me(), J = CS.juniors;
-    return `<h2 class="center">${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1}<br>
+    return `<h2 class="center">${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1} · ${diffTag(CS.diff)}<br>
       Each detective picks a <b>different</b> badge.${J ? ` ${J === CS.players ? 'Every badge is a 🐣 junior badge.' : `The 🐣 badges are for junior detectives${p.junior ? ' (that\'s you!)' : ''}.`}` : ''}</p>
       <div class="pick">${M.BADGES.slice(0, CS.players).map((b, k) => `<button class="opt${c.seat === k ? ' on' : ''}${k < J && p.junior && c.seat < 0 ? ' glow' : ''}" data-a="seat" data-v="${k}"><span class="big">${b.e}</span><b>${esc(b.name)}</b>${k < J ? '<span class="small">🐣 junior</span>' : ''}</button>`).join('')}</div>
       <button class="btn" data-a="tointro" ${c.seat >= 0 ? '' : 'disabled'}>Enter</button>`;
@@ -291,18 +297,18 @@ const SCREENS = {
       <div class="card"><p>${esc(CS.theme.intro)}</p><p>When the lights come back, <b>${esc(cr.what)}</b> is gone from ${esc(cr.from)}!</p>
       <p>${CS.n} suspects were there. Each was in a <b>different room</b>, holding a <b>different thing</b>. One of them is the thief.</p>
       <p>Find out <b>WHO</b> took it, <b>WHERE</b> they hid it (the room they were in), and <b>WHAT</b> they used (the thing they were holding).</p>
-      <p class="muted">Your candle lasts ${CS.rounds} searches.</p></div>
+      <p class="muted">${diffTag(CS.diff)}. Your candle lasts ${CS.rounds} searches, and you get ${CS.tries} accusations.</p></div>
       <div class="card"><h3>The suspects</h3>${CS.sus.map(p => `<div class="who">${portrait(p, 52)}<div><b>${esc(p.name)}</b><div class="muted small">${esc(p.role)}</div></div></div>`).join('')}</div>
       <button class="btn" data-a="start">Open my secret clues</button>`;
   },
   game() { return topBar() + TABS[V.tab](); },
   result() {
     const c = curCase(), st = M.storyText(CS), won = c.done === 1, nextOk = won && CS.level < 9;
-    return `<h2 class="center">${won ? 'Case closed!' : c.guesses.length >= 3 && c.guesses.every(g => g.right < 3) ? 'The thief got away...' : 'Here is what really happened'}</h2>
+    return `<h2 class="center">${won ? 'Case closed!' : c.guesses.length >= CS.tries && c.guesses.every(g => g.right < 3) ? 'The thief got away...' : 'Here is what really happened'}</h2>
       ${won ? `<div class="stars reveal">${starRow(c.stars)}</div>` : ''}
       <div class="card reveal center">${portrait(st.who, 120)}<h3>${esc(st.lines[0])}</h3></div>
       <div class="card">${st.lines.slice(1).map(l => `<p>${esc(l)}</p>`).join('')}<p class="muted small">${st.room.e} ${esc(st.room.name)} · ${st.item.e} the ${esc(st.item.name)}</p></div>
-      ${won ? `<p class="center muted">Solved in ${c.guesses.length} ${c.guesses.length === 1 ? 'try' : 'tries'}${left() > 0 ? ` with ${left()} search${left() === 1 ? '' : 'es'} of candle to spare` : ''}.${nextOk ? ` Case ${CS.level + 2} is unlocked!` : ''}</p>` : ''}
+      ${won ? `<p class="center muted">Solved on ${diffTag(CS.diff)} in ${c.guesses.length} ${c.guesses.length === 1 ? 'try' : 'tries'}${left() > 0 ? ` with ${left()} search${left() === 1 ? '' : 'es'} of candle to spare` : ''}.${nextOk ? ` Case ${CS.level + 2} is unlocked!` : ''}</p>` : ''}
       ${nextOk ? `<button class="btn" data-a="nextcase">Next case: ${CS.theme.e} Case ${CS.level + 2}</button>` : ''}
       <button class="btn${nextOk ? ' ghost' : ''}" data-a="book">Case book</button><button class="btn ghost" data-a="tab" data-v="clues">Look back at my clues</button><button class="btn ghost" data-a="home">Home</button>`;
   },
@@ -356,7 +362,7 @@ const TABS = {
   accuse() {
     const c = curCase(), a = V.acc;
     if (c.done) return `<div class="card center"><p>This case is closed.</p></div><button class="btn" data-a="showresult">See the ending</button>`;
-    const tries = 3 - c.guesses.length;
+    const tries = CS.tries - c.guesses.length;
     let h = `<p class="center">Agree as a team, then <b>everyone</b> enters the same answer. <b>${tries}</b> ${tries === 1 ? 'try' : 'tries'} left.</p>`;
     if (c.guesses.length) h += `<div class="card center">Last try: <b>${c.guesses[c.guesses.length - 1].right} of 3</b> right. The thief is still loose!</div>`;
     h += `<h3>WHO took it?</h3><div class="pick">${CS.sus.map((p, s) => `<button class="opt${a.s === s ? ' on' : ''}" data-a="as" data-v="${s}">${portrait(p, 48)}<b>${esc(p.name)}</b></button>`).join('')}</div>`;
@@ -393,7 +399,7 @@ function readBackup(txt) {
 function mergeProfile(inc) {
   const old = D.profiles[inc.id] || Object.values(D.profiles).find(p => p.name.toLowerCase() === inc.name.toLowerCase());
   if (!old) { D.profiles[inc.id] = inc; return inc; }
-  for (const k of Object.keys(old.prog)) old.prog[k] = old.prog[k].map((v, j) => Math.max(v, inc.prog[k][j]));   // restoring never loses stars
+  for (const k of Object.keys(old.prog)) { old.prog[k] = old.prog[k].map((v, j) => Math.max(v, inc.prog[k][j])); old.best[k] = old.best[k].map((v, j) => Math.max(v, inc.best[k][j])); }   // restoring never loses stars
   for (const r of ['solved', 'stars', 'played']) old.record[r] = Math.max(old.record[r], inc.record[r]);
   for (const [code, c] of Object.entries(inc.cases)) if (!old.cases[code]) old.cases[code] = c;
   return old;
@@ -442,20 +448,21 @@ const ACT = {
   join() { V.joinCode = ''; go('join'); setTimeout(() => { const i = document.getElementById('codein'); if (i) i.focus(); }, 50); },
   resume() { V.tab = 'clues'; go('game'); },
   theme(v) { const t = +v; if (!(t >= 0 && t < NTH)) return; V.theme = t; go('levels'); },
-  level(v) { const l = +v; if (!(l >= 0 && l < 10) || !unlocked(me(), V.theme, l)) return; V.draft = { players: 0, juniors: 0, level: l }; go('setup'); },
+  level(v) { const l = +v; if (!(l >= 0 && l < 10) || !unlocked(me(), V.theme, l)) return; V.draft = { players: 0, juniors: 0, level: l, diff: V.draft.diff >= 0 ? V.draft.diff : 1 }; go('setup'); },
   surprise() {
     const p = me(), t = Math.floor(Math.random() * NTH), pr = p.prog[M.THEMES[t].key];
     let l = pr.findIndex(s => s === 0); if (l < 0) l = Math.floor(Math.random() * 10);
-    V.theme = t; V.draft = { players: 0, juniors: 0, level: l }; go('setup');
+    V.theme = t; V.draft = { players: 0, juniors: 0, level: l, diff: V.draft.diff >= 0 ? V.draft.diff : 1 }; go('setup');
   },
   dp(v) { V.draft.players = +v; V.draft.juniors = Math.min(V.draft.juniors, +v); render(); },
   dj(v) { V.draft.juniors = Math.min(+v, V.draft.players); render(); },
+  dd(v) { const k = +v; if (k >= 0 && k < M.DIFFS.length) V.draft.diff = k; render(); },
   create() {
     const d = V.draft; if (!d.players) return; const p = me();
-    let code; do { code = M.makeCode({ theme: V.theme, level: d.level, players: d.players, juniors: d.juniors }); } while (p.cases[code]);
+    let code; do { code = M.makeCode({ theme: V.theme, level: d.level, diff: d.diff, players: d.players, juniors: d.juniors }); } while (p.cases[code]);
     openCase(code); go('code');
   },
-  nextcase() { V.theme = CS.themeIdx; V.draft = { players: CS.players, juniors: CS.juniors, level: CS.level + 1 }; go('setup'); },
+  nextcase() { V.theme = CS.themeIdx; V.draft = { players: CS.players, juniors: CS.juniors, level: CS.level + 1, diff: CS.diff }; go('setup'); },
   dojoin() {
     const i = document.getElementById('codein'); const raw = i ? i.value : V.joinCode; const info = M.readCode(raw);
     if (info.error) { V.joinCode = raw; V.screen = 'join'; V.err = info.error; render(); return; }
@@ -491,12 +498,13 @@ const ACT = {
     const right = (a.s === t) + (a.r === CS.roomOf[t]) + (a.i === CS.itemOf[t]);
     c.guesses.push({ s: a.s, r: a.r, i: a.i, right }); V.acc = { s: -1, r: -1, i: -1 };
     if (right === 3) {
-      c.done = 1; c.stars = 4 - c.guesses.length; p.record.solved++; p.record.stars += c.stars;
+      c.done = 1; c.stars = 4 - c.guesses.length;
+      const bk = p.best[CS.theme.key]; bk[CS.level] = Math.max(bk[CS.level], CS.diff); p.record.solved++; p.record.stars += c.stars;
       const pr = p.prog[CS.theme.key]; pr[CS.level] = Math.max(pr[CS.level], c.stars);
       save(); chime(true); go('result'); return;
     }
     chime(false);
-    if (c.guesses.length >= 3) { c.done = 2; save(); go('result'); return; }
+    if (c.guesses.length >= CS.tries) { c.done = 2; save(); go('result'); return; }
     save(); render(); window.scrollTo(0, 0);
   },
   giveup() { modal(`<h3>Show the answer?</h3><p>The case ends with no stars.</p><div class="row"><button class="btn ghost" data-a="close">Keep playing</button><button class="btn red" data-a="giveyes">Show it</button></div>`); },
