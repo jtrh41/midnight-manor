@@ -5,7 +5,7 @@
 (function (root) {
 'use strict';
 const TH = (typeof module !== 'undefined' && module.exports) ? require('./themes.js') : root.ManorThemes;
-const GEN = 4;
+const GEN = 5;
 const ALPHA = 'BCDFGHJKLMNPQRSTVWXZ';          // no vowels: codes never spell words, no 0/O or 1/I mix-ups
 const THEME_SLOTS = 12, LEVEL_SLOTS = 10, MAX_PLAYERS = 8;
 const JUN_SLOTS = MAX_PLAYERS + 1;   // 0..8 juniors

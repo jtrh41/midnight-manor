@@ -176,6 +176,24 @@ function clueCard(cl, idx, src, fresh, extra) {
   return `<div class="clue${fresh ? ' new' : ''}${isJuniorSeat() ? ' big' : ''}">${src ? `<div class="src">${esc(src)}</div>` : ''}<div>${esc(M.clueText(cl, CS))}</div>${hint ? `<div class="hint">💡 ${esc(hint)}</div>` : ''}
     <button class="say" data-a="say" data-v="${idx}" aria-label="Read aloud">🔊</button>${extra || ''}</div>`;
 }
+const notes = () => isLive() ? teamState().note : curCase().note;
+function notesPanel() {
+  if (V.nbHide) return `<div class="cn-nb hid"><button class="nbshow" data-a="nbhide">📓 Show notes</button></div>`;
+  const n = CS.n, where = V.nb === 'where', key = where ? 'sr' : 'si', cols = where ? CS.rooms : CS.items, N = notes();
+  let h = `<div class="cn-nb"><div class="nbbar"><div class="seg sm"><button class="${where ? 'on' : ''}" data-a="nb" data-v="where">📍 Where</button><button class="${where ? '' : 'on'}" data-a="nb" data-v="what">🧰 What</button></div><button class="nbhide" data-a="nbhide" aria-label="Hide notes">Hide ▲</button></div>
+    <table class="nb sm"><tr><th class="nm">${isLive() ? '<span class="small">👥 shared</span>' : ''}</th>${cols.map(x => `<th title="${esc(x.name)}"><span class="e">${x.e}</span>${esc(x.name.replace(/'s$/, '').split(' ').pop())}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>`;
+  CS.sus.forEach((p, s) => {
+    const words = p.name.split(' '), short = words.length > 1 ? words[words.length - 1] : p.name;
+    h += `<tr><td class="nm">${portrait(p, 24)}<span>${esc(short)}</span></td>`;
+    for (let x = 0; x < n; x++) { const v = N[key][s * n + x]; h += `<td class="c ${v === 1 ? 'x' : v === 2 ? 'y' : ''}" data-a="cell" data-v="${key}:${s * n + x}">${v === 1 ? '✗' : v === 2 ? '✓' : ''}</td>`; }
+    const tv = N.t[s]; h += `<td class="c thf ${tv === 1 ? 'x' : tv === 2 ? 'q' : ''}" data-a="cell" data-v="t:${s}">${tv === 1 ? '✗' : tv === 2 ? '❓' : ''}</td></tr>`;
+  });
+  return h + `</table></div>`;
+}
+function notesHelp() {
+  return `<p class="muted small center">📓 Notes: tap a box for ✗ "no", again for ✓ "yes", again to clear. Thief column: ✗ not the thief, ❓ suspicious.${isLive() ? ' Everyone on the team sees the same notes, so split up the work.' : ''}<br>Remember: one suspect per room, one thing per suspect.</p>
+    <button class="btn ghost" data-a="clearnb">Clear the notes</button>`;
+}
 function topBar() {
   const c = curCase(), b = M.BADGES[c.seat];
   return `<div class="top">${candle(left(), CS.rounds)}<div class="t"><h2>${esc(CS.crime.title)}</h2>
@@ -196,6 +214,7 @@ function teamState() {
   const P = CS.players, evs = L.events(CS.code);
   const owner = Array(P).fill(null), searches = Array.from({ length: P }, () => ({})), skip = Array(P).fill(-1), feed = [], guesses = [], shared = {}, names = {};
   let done = 0, donePending = false;
+  const nn = CS.n, note = { sr: Array(nn * nn).fill(0), si: Array(nn * nn).fill(0), t: Array(nn).fill(0) }, NK = ['sr', 'si', 't'];
   const ok = (v, hi) => Number.isInteger(v) && v >= 0 && v < hi;
   for (const e of evs) {
     const s = e.seat;
@@ -220,12 +239,15 @@ function teamState() {
       guesses.push({ s: e.s, r: e.r, i: e.i, right }); feed.push({ k: 'acc', seat: s, s: e.s, r: e.r, i: e.i, right, dev: e.dev, eid: e.eid });
       if (right === 3) done = 1; else if (guesses.length >= CS.tries) done = 2;
       if (done) donePending = !!e.pending;
+    } else if (e.k === 'note') {
+      if (e.clear) { note.sr.fill(0); note.si.fill(0); note.t.fill(0); continue; }
+      const arr = note[NK[e.g]]; if (arr && ok(e.x, arr.length) && ok(e.v, 3)) arr[e.x] = e.v;
     } else if (e.k === 'give') {
       if (!done) { done = 2; donePending = !!e.pending; feed.push({ k: 'give', seat: s, dev: e.dev, eid: e.eid }); }
     }
   }
   const found = searches.map(o => Object.keys(o).length);
-  return { owner, searches, found, skip, feed, guesses, done, donePending, names };
+  return { owner, searches, found, skip, feed, guesses, done, donePending, names, note };
 }
 const nameOf = (T, f) => { const n = T.names[f.dev]; return n ? n.name : 'Someone'; };
 const badgeOf = s => M.BADGES[s] ? M.BADGES[s].e : '🕵️';
@@ -283,7 +305,7 @@ function liveRefresh() {
   if (!CS || !LIVE_SCREENS.includes(V.screen)) return;
   const T = teamState();
   const sig = [L.status(), V.screen, curCase() && curCase().seat, T.owner.map(o => o ? o.dev + o.name : '-').join(), T.found.join(), T.guesses.length, T.feed.length, T.skip.join(),
-    range(CS.players).map(s => T.owner[s] && online(T.owner[s].dev) ? 1 : 0).join(''), voiceSig(), L.pending(CS.code, myDev()) ? 1 : 0, T.donePending ? 1 : 0].join('|');
+    range(CS.players).map(s => T.owner[s] && online(T.owner[s].dev) ? 1 : 0).join(''), voiceSig(), L.pending(CS.code, myDev()) ? 1 : 0, T.donePending ? 1 : 0, T.note.sr.join('') + T.note.si.join('') + T.note.t.join('')].join('|');
   if (sig !== liveSig) { liveSig = sig; render(); }
 }
 let toastT = 0;
@@ -455,14 +477,14 @@ const SCREENS = {
 const TABS = {
   clues() {
     const c = curCase(), mine = myClues();
-    let h = `<div class="toggle"><span class="small">💡 Clue helper (explains what each clue means)</span><button class="${c.help ? 'on' : ''}" data-a="help">${c.help ? 'On' : 'Off'}</button></div><h3>Your secret starting clues</h3>`;
+    let h = notesPanel() + `<div class="toggle"><span class="small">💡 Clue helper (explains what each clue means)</span><button class="${c.help ? 'on' : ''}" data-a="help">${c.help ? 'On' : 'Off'}</button></div><h3>Your secret starting clues</h3>`;
     const T = isLive() ? teamState() : null;
     if (T) h += `<p class="small muted">📣 Share a starting clue to put it on everyone's Team page. Clues you find are shared by themselves.</p>`;
     mine.slice(0, CS.start).forEach((cl, k) => { h += clueCard(cl, k, '', false, T ? (T.feed.some(f => f.k === 'share' && f.seat === c.seat && f.idx === k) ? '<span class="shared">📣 shared</span>' : `<button class="sharebtn" data-a="shareclue" data-v="${k}">📣 Share</button>`) : ''); });
     if (mine.length > CS.start) h += `<h3>Clues you found</h3>`;
     for (let k = mine.length - 1; k >= CS.start; k--) { const f = k - CS.start, r = c.searched[f]; h += clueCard(mine[k], k, (r >= 0 && r < CS.n ? CS.rooms[r].e + ' ' + CS.rooms[r].name + ': ' : '') + CS.finds[CS.flavor[c.seat][f % CS.finds.length]], V.fresh === k); }
     if (!c.done) h += left() > 0 ? `<button class="btn" data-a="tab" data-v="search">🔦 Search a room (${left()} left)</button>` : `<button class="btn red" data-a="tab" data-v="accuse">The candle is out: make the accusation</button>`;
-    V.fresh = -1; return h;
+    V.fresh = -1; return h + notesHelp();
   },
   search() {
     const c = curCase(), Z = CS.theme.zone, F = CS.theme.flag;
@@ -508,7 +530,7 @@ const TABS = {
   },
   team() {
     const c = curCase(), T = teamState(), st = L.status(), meD = myDev();
-    let h = `<div class="card livecard ${st}">${st === 'live' ? '🟢 <b>Live.</b> Everyone\'s searches and shared clues show up here.' : st === 'trying' ? '🟡 <b>Reconnecting…</b> Keep playing: your moves are saved on this device and sent when the signal is back.' : '⚪ <b>No signal right now.</b> The game still works. Keep talking on your call; your moves are sent as soon as the signal is back.'}</div>`;
+    let h = notesPanel() + `<div class="card livecard ${st}">${st === 'live' ? '🟢 <b>Live.</b> Everyone\'s searches and shared clues show up here.' : st === 'trying' ? '🟡 <b>Reconnecting…</b> Keep playing: your moves are saved on this device and sent when the signal is back.' : '⚪ <b>No signal right now.</b> The game still works. Keep talking on your call; your moves are sent as soon as the signal is back.'}</div>`;
     h += `<h3>Detectives</h3><div class="team">`;
     for (let s = 0; s < CS.players; s++) {
       const o = T.owner[s], mineS = s === c.seat, on = o && online(o.dev), done = o ? T.found[s] : 0;
@@ -543,7 +565,7 @@ const TABS = {
       <button class="btn ghost small" data-a="giveup">Give up and show the answer</button>`;
   },
 };
-const TABLIST = [['clues', '📜', 'Clues'], ['search', '🔦', 'Search'], ['team', '👥', 'Team'], ['notebook', '📓', 'Notes'], ['file', '🗂️', 'File'], ['accuse', '⚖️', 'Accuse']];
+const TABLIST = [['clues', '📜', 'Clues+Notes'], ['search', '🔦', 'Search'], ['team', '👥', 'Team'], ['file', '🗂️', 'File'], ['accuse', '⚖️', 'Accuse']];
 
 function render() {
   if (!me() && !['who', 'addprof'].includes(V.screen)) V.screen = 'who';
@@ -738,9 +760,16 @@ const ACT = {
     setTimeout(() => { if (isLive()) L.send(CS.code, { k: 'search', seat: c.seat, round: c.found, room: r }, myDev()); c.searched.push(r); c.found++; save(); applyLive(true); V.searching = -1; V.fresh = CS.start + c.found - 1; V.tab = 'clues'; render(); window.scrollTo(0, 0); chime(true); }, 1300);
   },
   nb(v) { V.nb = v === 'what' ? 'what' : 'where'; render(); },
-  cell(v) { const [k, idx] = String(v).split(':'), arr = curCase().note[k]; if (!arr || !(+idx >= 0 && +idx < arr.length)) return; arr[+idx] = (arr[+idx] + 1) % 3; save(); render(); },
-  clearnb() { modal(`<h3>Clear the notebook?</h3><p>All your ✗ and ✓ marks for this case will be wiped.</p><div class="row"><button class="btn ghost" data-a="close">Keep them</button><button class="btn red" data-a="clearyes">Clear</button></div>`); },
-  clearyes() { const c = curCase(), n = CS.n; c.note = { sr: Array(n * n).fill(0), si: Array(n * n).fill(0), t: Array(n).fill(0) }; save(); closeModal(); render(); },
+  nbhide() { V.nbHide = !V.nbHide; render(); },
+  cell(v) {
+    const [k, idx] = String(v).split(':'), i = +idx, N = notes(), arr = N[k], mine = curCase().note[k];
+    if (!arr || !mine || !(i >= 0 && i < arr.length)) return;
+    const nv = (arr[i] + 1) % 3; mine[i] = nv; save();
+    if (isLive()) L.send(CS.code, { k: 'note', g: ['sr', 'si', 't'].indexOf(k), x: i, v: nv }, myDev());
+    render();
+  },
+  clearnb() { modal(`<h3>Clear the notebook?</h3><p>All the ✗ and ✓ marks for this case will be wiped${isLive() ? ' for the whole team' : ''}.</p><div class="row"><button class="btn ghost" data-a="close">Keep them</button><button class="btn red" data-a="clearyes">Clear</button></div>`); },
+  clearyes() { const c = curCase(), n = CS.n; c.note = { sr: Array(n * n).fill(0), si: Array(n * n).fill(0), t: Array(n).fill(0) }; save(); if (isLive()) L.send(CS.code, { k: 'note', clear: 1 }, myDev()); closeModal(); render(); },
   close() { closeModal(); },
   as(v) { V.acc.s = +v; render(); }, ar(v) { V.acc.r = +v; render(); }, ai(v) { V.acc.i = +v; render(); },
   accuse() {

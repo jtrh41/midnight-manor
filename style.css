@@ -71,6 +71,19 @@ table.nb td.c.x{color:#e0705c}
 table.nb td.c.y{color:#8fe08a;background:#24331f}
 table.nb td.c.q{color:var(--gold2)}
 table.nb td.thf{background:#2a1716}
+.cn-nb{position:sticky;top:0;z-index:4;margin:0 -16px 8px;padding:calc(env(safe-area-inset-top,0px) + 6px) 12px 6px;background:rgba(21,16,12,.97);border-bottom:1px solid var(--line);box-shadow:0 6px 14px rgba(0,0,0,.45)}
+.cn-nb.hid{padding-bottom:4px}
+.nbbar{display:flex;gap:8px;align-items:center}
+.nbbar .seg{flex:1}
+.seg.sm button{min-height:34px;font-size:14px}
+.nbhide,.nbshow{border:1px solid var(--line);background:var(--panel2);color:var(--muted);font:600 13px var(--sans);min-height:36px;border-radius:10px;padding:0 10px;cursor:pointer}
+.nbshow{width:100%;color:var(--gold2)}
+table.nb.sm{margin:4px auto 0;border-spacing:2px}
+table.nb.sm th .e{font-size:17px}
+table.nb.sm th.nm{width:78px}
+table.nb.sm td.nm{font-size:12px;height:33px}
+table.nb.sm td.c{height:33px;font-size:18px;border-radius:6px}
+@media (max-height:700px){table.nb.sm td.c,table.nb.sm td.nm{height:28px}table.nb.sm th .e{font-size:15px}}
 .seg{display:flex;background:var(--panel2);border-radius:12px;padding:3px;border:1px solid var(--line)}
 .seg button{flex:1;border:0;background:transparent;color:var(--muted);font:600 15px var(--sans);min-height:42px;border-radius:10px;cursor:pointer}
 .seg button.on{background:var(--gold);color:#2a1606}
