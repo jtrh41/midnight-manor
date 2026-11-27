@@ -186,7 +186,10 @@ function notesPanel() {
   if (V.nbHide) return `<div class="cn-nb hid"><button class="nbshow" data-a="nbhide">📓 Show notes</button></div>`;
   const n = CS.n, where = V.nb === 'where', key = where ? 'sr' : 'si', cols = where ? CS.rooms : CS.items, N = notes();
   let h = `<div class="cn-nb"><div class="nbbar"><div class="seg sm"><button class="${where ? 'on' : ''}" data-a="nb" data-v="where">📍 Where</button><button class="${where ? '' : 'on'}" data-a="nb" data-v="what">🧰 What</button></div><button class="nbhide" data-a="nbhide" aria-label="Hide notes">Hide ▲</button></div>
-    <table class="nb sm"><tr><th class="nm">${isLive() ? '<span class="small">👥 shared</span>' : ''}</th>${shortNames(cols).map((t, k) => `<th title="${esc(cols[k].name)}"><span class="e">${cols[k].e}</span>${esc(t)}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>`;
+    <table class="nb sm"><tr><th class="nm">${isLive() ? '<span class="small">👥 shared</span>' : ''}</th>${shortNames(cols).map((t, k) => `<th title="${esc(cols[k].name)}"><span class="e">${cols[k].e}</span>${esc(t)}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>
+    <tr class="fl"><th></th>${cols.map(x => where
+      ? `<th class="${x.up ? 'up' : 'dn'}">${x.up ? '⬆' : '⬇'} ${esc(x.up ? CS.theme.zone.up : CS.theme.zone.down)}${x.flag ? `<br>${CS.theme.flag.icon} ${esc(CS.theme.flag.label)}` : ''}</th>`
+      : `<th>${[...x.t].map(k => esc(M.TAGS[k].who)).join('<br>') || '–'}</th>`).join('')}<th></th></tr>`;
   CS.sus.forEach((p, s) => {
     const words = p.name.split(' '), short = words.length > 1 ? words[words.length - 1] : p.name;
     h += `<tr><td class="nm">${portrait(p, 24)}<span>${esc(short)}</span></td>`;

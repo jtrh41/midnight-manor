@@ -85,6 +85,11 @@ table.nb.sm td.nm{font-size:12px;height:33px}
 table.nb.sm td.c{height:33px;font-size:18px;border-radius:6px}
 /* inside a room */
 .rscene{position:relative;aspect-ratio:16/11;border-radius:16px;overflow:hidden;border:2px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.6);perspective:700px;margin:4px 0 10px}
+.rscene svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.rscene .flame{animation:flick .5s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 100%}
+.rscene .swing{animation:swing 2s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 0}
+@keyframes swing{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}
+.rscene .steam{animation:bob 2.5s ease-in-out infinite}
 .rscene .wall{position:absolute;left:0;right:0;top:0;height:66%;background:linear-gradient(var(--w1),var(--w2));box-shadow:inset 0 -12px 18px rgba(0,0,0,.35)}
 .rscene .wall::after{content:'';position:absolute;left:0;right:0;bottom:22%;height:5px;background:rgba(0,0,0,.25)}
 .rscene .floor{position:absolute;left:0;right:0;bottom:0;height:34%;background:repeating-linear-gradient(90deg,var(--f1) 0 46px,var(--f2) 46px 49px);transform-origin:top;transform:perspective(200px) rotateX(28deg) scale(1.5,1.06)}
@@ -105,7 +110,7 @@ table.nb.sm td.c{height:33px;font-size:18px;border-radius:6px}
 .rscene .feat.win::after{top:50%;left:0;right:0;height:5px;margin-top:-2px}
 .rscene .feat.hang{top:14%;width:auto;aspect-ratio:auto;border-top:30px solid transparent;filter:drop-shadow(0 0 18px #ffb84a)}
 .rscene .feat.sign{background:#00000033;border:4px solid #8a6a3a;border-radius:12px;width:22%;opacity:.9}
-.rscene .plaque{position:absolute;left:50%;top:0;transform:translateX(-50%);background:#2a1a0c;border:2px solid var(--gold);border-top:0;border-radius:0 0 12px 12px;color:var(--gold2);font:600 15px var(--serif);padding:4px 14px;white-space:nowrap;text-align:center;z-index:2}
+.rscene .plaque{position:absolute;left:8px;top:8px;background:rgba(42,26,12,.9);border:2px solid var(--gold);border-radius:10px;color:var(--gold2);font:600 14px var(--serif);padding:3px 10px;white-space:nowrap;z-index:2}
 .rscene .plaque small{display:block;font:11px var(--sans);color:var(--muted)}
 .rscene .spark{position:absolute;left:50%;top:48%;font-size:44px;transform:translate(-50%,-50%) scale(0);animation:sparkle 1.2s ease-out both;animation-delay:calc(2.7s + var(--el));z-index:3}
 @keyframes sparkle{40%{transform:translate(-50%,-50%) scale(1.5)}100%{transform:translate(-50%,-50%) scale(0);opacity:0}}
@@ -193,3 +198,6 @@ svg.qr{width:min(260px,70vw);height:auto;border-radius:10px;margin:8px auto;disp
 details.card summary{cursor:pointer;color:var(--gold2)}
 .liveline{margin:2px 0}
 .liveline .pill{min-height:24px;padding:0 9px;font-size:12px}
+table.nb tr.fl th{font:600 9px/1.15 var(--sans);white-space:normal;vertical-align:top;padding:1px 0 3px;color:var(--muted)}
+table.nb tr.fl th.up{color:var(--gold2)}
+table.nb tr.fl th.dn{color:#8fc8ff}
