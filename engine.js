@@ -64,7 +64,7 @@ function readCode(raw) {
   if (c.length !== 6) return { error: 'A case code has 6 letters.' };
   let v = 0;
   for (let k = 0; k < 5; k++) { const d = ALPHA.indexOf(c[k]); if (d < 0) return { error: 'That code has a letter that is never used in codes (codes have no vowels). Check it again.' }; v = v * 20 + d; }
-  if (checkLetter(v) !== c[5]) return { error: 'That code does not match. Check each letter. If it is right, close and reopen the game on both devices so they have the same version.' };
+  if (checkLetter(v) !== c[5]) return { error: 'That code does not match. Check each letter. If it is right, close and reopen the game on both devices so they have the same version.', kind: 'check' };
   let x = v; const juniors = x % JUN_SLOTS; x = Math.floor(x / JUN_SLOTS); const players = x % MAX_PLAYERS + 1; x = Math.floor(x / MAX_PLAYERS);
   const diff = x % DIFF_SLOTS; x = Math.floor(x / DIFF_SLOTS); const level = x % LEVEL_SLOTS; x = Math.floor(x / LEVEL_SLOTS); const theme = x % THEME_SLOTS; const seed = Math.floor(x / THEME_SLOTS);
   if (seed >= SEEDS || theme >= TH.THEMES.length || juniors > players) return { error: 'That code does not match. Check each letter.' };

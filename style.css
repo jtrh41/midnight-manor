@@ -117,3 +117,28 @@ svg.qr{width:min(260px,70vw);height:auto;border-radius:10px;margin:8px auto;disp
 .opt.diffopt{width:100%;text-align:left;margin:6px 0;padding:10px 14px;min-height:56px;display:block}
 .opt.diffopt b{font-size:17px}
 .lvl .small{line-height:1.2}
+/* live table */
+.pill{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font:13px var(--sans);cursor:pointer;white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%;background:#888;display:inline-block}
+.pill.ok i{background:#6fdc6a;box-shadow:0 0 6px #6fdc6a}
+.pill.warn i{background:var(--gold);animation:blink 1s infinite}
+.pill.off{color:var(--muted)}
+@keyframes blink{50%{opacity:.25}}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 10px);transform:translate(-50%,-140%);transition:transform .3s;z-index:60;max-width:92vw;background:#3a2a17;border:1px solid var(--gold);color:var(--gold2);padding:10px 16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.6);font-size:15px;text-align:center}
+#toast.show{transform:translate(-50%,0)}
+.opt.taken{opacity:.6;border-style:dashed}
+.opt .owner{display:block;color:var(--gold2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sharebtn{margin-top:8px;margin-right:48px;border:1px solid #b8996c;background:#e6d3ad;color:#4a3219;border-radius:10px;padding:6px 12px;font:600 14px var(--sans);cursor:pointer;min-height:36px}
+.clue .shared{display:inline-block;margin-top:8px;font:13px var(--sans);color:#6b5a3e}
+.team{display:grid;gap:8px}
+.mate{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.mate.me{border-color:var(--gold)}
+.mate .b{font-size:28px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-right:5px;vertical-align:middle}
+.dot.on{background:#6fdc6a}
+.livecard.trying{border-color:var(--gold)}
+.livecard.offline{border-color:#666}
+.wait .big{font-size:40px}
+details.card summary{cursor:pointer;color:var(--gold2)}
+.liveline{margin:2px 0}
+.liveline .pill{min-height:24px;padding:0 9px;font-size:12px}
