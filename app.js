@@ -176,12 +176,17 @@ function clueCard(cl, idx, src, fresh, extra) {
   return `<div class="clue${fresh ? ' new' : ''}${isJuniorSeat() ? ' big' : ''}">${src ? `<div class="src">${esc(src)}</div>` : ''}<div>${esc(M.clueText(cl, CS))}</div>${hint ? `<div class="hint">💡 ${esc(hint)}</div>` : ''}
     <button class="say" data-a="say" data-v="${idx}" aria-label="Read aloud">🔊</button>${extra || ''}</div>`;
 }
+// short column labels; when two end the same way ("Dining Car", "Coal Car") use the first word instead
+function shortNames(cols) {
+  const last = cols.map(x => x.name.replace(/'s$/, '').split(' ').pop());
+  return cols.map((x, k) => last.filter(l => l === last[k]).length > 1 ? x.name.split(' ')[0].replace(/'s$/, '') : last[k]);
+}
 const notes = () => isLive() ? teamState().note : curCase().note;
 function notesPanel() {
   if (V.nbHide) return `<div class="cn-nb hid"><button class="nbshow" data-a="nbhide">📓 Show notes</button></div>`;
   const n = CS.n, where = V.nb === 'where', key = where ? 'sr' : 'si', cols = where ? CS.rooms : CS.items, N = notes();
   let h = `<div class="cn-nb"><div class="nbbar"><div class="seg sm"><button class="${where ? 'on' : ''}" data-a="nb" data-v="where">📍 Where</button><button class="${where ? '' : 'on'}" data-a="nb" data-v="what">🧰 What</button></div><button class="nbhide" data-a="nbhide" aria-label="Hide notes">Hide ▲</button></div>
-    <table class="nb sm"><tr><th class="nm">${isLive() ? '<span class="small">👥 shared</span>' : ''}</th>${cols.map(x => `<th title="${esc(x.name)}"><span class="e">${x.e}</span>${esc(x.name.replace(/'s$/, '').split(' ').pop())}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>`;
+    <table class="nb sm"><tr><th class="nm">${isLive() ? '<span class="small">👥 shared</span>' : ''}</th>${shortNames(cols).map((t, k) => `<th title="${esc(cols[k].name)}"><span class="e">${cols[k].e}</span>${esc(t)}</th>`).join('')}<th><span class="e">🕵️</span>Thief?</th></tr>`;
   CS.sus.forEach((p, s) => {
     const words = p.name.split(' '), short = words.length > 1 ? words[words.length - 1] : p.name;
     h += `<tr><td class="nm">${portrait(p, 24)}<span>${esc(short)}</span></td>`;
@@ -488,6 +493,12 @@ const TABS = {
   },
   search() {
     const c = curCase(), Z = CS.theme.zone, F = CS.theme.flag;
+    if (V.inRoom) {
+      const v = V.inRoom, room = CS.rooms[v.r], cl = myClues()[v.k], el = (Date.now() - v.t0) / 1000;
+      return `<div class="inroom">${window.ManorRooms.scene(CS.theme.key, room, F, esc(room.up ? Z.up : Z.down), el)}
+        <div class="rfound" style="--el:${-el}s">${cl ? clueCard(cl, v.k, CS.finds[CS.flavor[c.seat][v.f % CS.finds.length]], false) : ''}
+        <button class="btn" data-a="leaveroom">🚪 Leave the ${esc(room.name)}</button></div></div>`;
+    }
     if (V.searching >= 0) return `<div class="search-anim"><div class="glass">🔍</div><p>Searching the ${esc(roomName(V.searching))}...</p></div>`;
     if (c.done) return `<div class="card center"><p>This case is closed.</p></div>`;
     if (left() <= 0) return `<div class="card center"><p>🕯️ Your candle has burned out. No more searching!</p><p class="muted">Talk it over with the team, then make the accusation.</p></div><button class="btn red" data-a="tab" data-v="accuse">Make the accusation</button>`;
@@ -749,17 +760,21 @@ const ACT = {
   nowaityes() { closeModal(); const c = curCase(); for (const s of waitingFor(teamState())) L.send(CS.code, { k: 'skip', seat: s, round: c.found }, myDev()); applyLive(true); render(); },
   tointro() { if (curCase().seat >= 0) go('intro'); },
   start() { V.tab = 'clues'; go('game'); },
-  tab(v) { if (!TABS[v]) return; V.tab = v; V.screen = 'game'; render(); window.scrollTo(0, 0); },
+  tab(v) { if (!TABS[v]) return; V.tab = v; V.inRoom = null; V.screen = 'game'; render(); window.scrollTo(0, 0); },
   help() { const c = curCase(); c.help = c.help ? 0 : 1; save(); render(); },
   say(v) { const cl = myClues()[+v]; if (!cl) return; say(M.clueText(cl, CS) + (curCase().help ? ' ' + M.hintText(cl, CS).replace(/✗/g, 'a cross') : '')); },
   sound() { D.settings.sound = D.settings.sound ? 0 : 1; save(); if (D.settings.sound) soundOn(); else soundOff(); render(); },
   searchroom(v) {
     const c = curCase(), r = +v; if (c.done || left() <= 0 || V.searching >= 0 || !(r >= 0 && r < CS.n)) return;
     if (isLive() && waitingFor(teamState()).length) { render(); return; }
-    V.searching = r; render();
-    setTimeout(() => { if (isLive()) L.send(CS.code, { k: 'search', seat: c.seat, round: c.found, room: r }, myDev()); c.searched.push(r); c.found++; save(); applyLive(true); V.searching = -1; V.fresh = CS.start + c.found - 1; V.tab = 'clues'; render(); window.scrollTo(0, 0); chime(true); }, 1300);
+    if (isLive()) L.send(CS.code, { k: 'search', seat: c.seat, round: c.found, room: r }, myDev());
+    c.searched.push(r); c.found++; save(); applyLive(true);
+    const k = CS.start + c.found - 1, visit = V.inRoom = { r, k, f: c.found - 1, t0: Date.now() };
+    render(); window.scrollTo(0, 0);
+    setTimeout(() => { if (V.inRoom === visit) chime(true); }, 3000);
   },
   nb(v) { V.nb = v === 'what' ? 'what' : 'where'; render(); },
+  leaveroom() { const v = V.inRoom; V.inRoom = null; if (v) V.fresh = v.k; V.tab = 'clues'; render(); window.scrollTo(0, 0); },
   nbhide() { V.nbHide = !V.nbHide; render(); },
   cell(v) {
     const [k, idx] = String(v).split(':'), i = +idx, N = notes(), arr = N[k], mine = curCase().note[k];
