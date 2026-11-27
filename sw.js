@@ -1,6 +1,6 @@
 // Midnight at the Manor offline helper. VERSION changes with every build so updates arrive on their own.
-const VERSION = 'mm-b311235864d0';
-const CORE = ['./', 'index.html', 'app.js', 'live.js', 'engine.js', 'themes.js', 'vendor/qrcode-gen.js', 'style.css', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
+const VERSION = 'mm-6c9e33369597';
+const CORE = ['./', 'index.html', 'app.js', 'live.js', 'voice.js', 'engine.js', 'themes.js', 'vendor/qrcode-gen.js', 'style.css', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('mm-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));

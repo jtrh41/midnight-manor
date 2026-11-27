@@ -179,11 +179,11 @@ function clueCard(cl, idx, src, fresh, extra) {
 function topBar() {
   const c = curCase(), b = M.BADGES[c.seat];
   return `<div class="top">${candle(left(), CS.rounds)}<div class="t"><h2>${esc(CS.crime.title)}</h2>
-    ${isLive() ? `<div class="liveline">${livePill()}</div>` : ''}<div class="muted small">${b.e} ${esc(b.name)}${isJuniorSeat() ? ' (junior)' : ''} · ${left() > 0 ? `${left()} search${left() === 1 ? '' : 'es'} left` : 'candle is out'}</div></div>
+    ${isLive() ? `<div class="liveline">${livePill()} ${voicePill()}</div>` : ''}<div class="muted small">${b.e} ${esc(b.name)}${isJuniorSeat() ? ' (junior)' : ''} · ${left() > 0 ? `${left()} search${left() === 1 ? '' : 'es'} left` : 'candle is out'}</div></div>
     <button class="iconbtn" data-a="sound" aria-label="Sound">${D.settings.sound ? '🔊' : '🔈'}</button><button class="iconbtn" data-a="home" aria-label="Home">🏠</button></div>`;
 }
 // ---------- live table (phones in different houses stay at the same pace; see live.js) ----------
-const L = window.ManorLive;
+const L = window.ManorLive, VC = window.ManorVoice;
 const LIVE_SCREENS = ['code', 'badge', 'intro', 'game', 'result'];
 const isLive = () => !!(CS && CS.players > 1 && L);
 const myDev = () => L.dev() + '_' + me().id;
@@ -275,14 +275,36 @@ function applyLive(quiet) {
 }
 function onLive() {
   applyLive();
+  if (VC) VC.tick(L.here(), L.serverNow());
+  liveRefresh();
+}
+// redraw the case screens only when something the player can see has changed
+function liveRefresh() {
   if (!CS || !LIVE_SCREENS.includes(V.screen)) return;
   const T = teamState();
   const sig = [L.status(), V.screen, curCase() && curCase().seat, T.owner.map(o => o ? o.dev + o.name : '-').join(), T.found.join(), T.guesses.length, T.feed.length, T.skip.join(),
-    range(CS.players).map(s => T.owner[s] && online(T.owner[s].dev) ? 1 : 0).join(''), L.pending(CS.code, myDev()) ? 1 : 0, T.donePending ? 1 : 0].join('|');
+    range(CS.players).map(s => T.owner[s] && online(T.owner[s].dev) ? 1 : 0).join(''), voiceSig(), L.pending(CS.code, myDev()) ? 1 : 0, T.donePending ? 1 : 0].join('|');
   if (sig !== liveSig) { liveSig = sig; render(); }
 }
 let toastT = 0;
 function toast(msg) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3800); }
+function voiceSig() { if (!VC) return ''; return [VC.isOn() ? 1 : 0, VC.isJoining() ? 1 : 0, VC.isMuted() ? 1 : 0, L.here().map(h => h.dev + ':' + (h.voice ? 1 : 0) + ':' + (VC.peerState(h.dev) || '')).join()].join('/'); }
+function voicePill() {
+  if (!isLive() || !VC || !VC.supported()) return '';
+  if (VC.isJoining()) return `<button class="pill" data-a="voice">🎙️ Joining…</button>`;
+  if (!VC.isOn()) return `<button class="pill" data-a="voice">🎙️ Voice</button>`;
+  const n = VC.connectedCount();
+  return `<button class="pill ${VC.isMuted() ? 'off' : 'ok'} vc" data-a="voice">${VC.isMuted() ? '🔇 Muted' : '🎙️ ' + (n ? n + ' talking' : 'On')}</button>`;
+}
+// who is in the voice call, and can I hear them
+function voiceLine(dev) {
+  if (!VC) return '';
+  const h = L.here().find(x => x.dev === dev); if (!h || !h.voice) return '';
+  if (dev === myDev()) return VC.isOn() ? (VC.isMuted() ? ' · 🔇 muted' : ' · 🎙️ in voice') : '';
+  if (!VC.isOn()) return ' · 🎙️ in voice';
+  const st = VC.peerState(dev);
+  return st === 'connected' ? ' · 🔊 you can hear them' : st === 'lost' || st === 'failed' ? ' · 🎙️ reconnecting…' : ' · 🎙️ connecting…';
+}
 function livePill() {
   if (!isLive()) return '';
   const st = L.status(), pend = L.pending(CS.code, myDev());
@@ -347,7 +369,8 @@ const SCREENS = {
       <div class="card"><h3>The golden rule</h3><p>Every suspect was in a <b>different room</b> and held a <b>different thing</b>. The thief hid the treasure in the room they were in, and used the thing they were holding.</p>
       <p class="muted small">Every clue is true. Nobody's clues alone are enough. Works with no internet.</p></div>
       <div class="card"><h3>📞 Playing with family far away</h3><p>Start a FaceTime or phone call, then tap <b>📨 Send the code</b> on the case code screen. When phones have a signal they play <b>live</b>: each round opens when everyone has searched, found clues appear on everyone's <b>👥 Team</b> page, and one accusation counts for the whole team.</p>
-      <p class="small muted">If someone's signal drops, their game keeps working and catches up when it's back, and nobody is kept waiting for them.</p></div>
+      <p class="small muted">If someone's signal drops, their game keeps working and catches up when it's back, and nobody is kept waiting for them.</p>
+      <p>Tap <b>🎙️ Voice</b> at the top to talk with everyone right in the game (headphones work best). People in the same room should leave voice off.</p></div>
       <button class="btn" data-a="home">Got it</button>`;
   },
   share() {
@@ -387,7 +410,7 @@ const SCREENS = {
     return `<h2 class="center">${esc(CS.crime.e)} ${esc(CS.crime.title)}</h2><p class="center muted">${CS.theme.e} ${esc(CS.theme.name)} · Case ${CS.level + 1} · ${diffTag(CS.diff)}</p>
       <div class="card center"><p>Case code</p><div class="code">${esc(code.slice(0, 3))} ${esc(code.slice(3))}</div>
       <p class="muted">${CS.players > 1 ? `Everyone else: tap <b>Join a case</b> and type this code.<br>${CS.players} detectives${CS.juniors ? `, ${CS.juniors} junior` : ''}.` : 'Playing solo.'}</p></div>
-      ${CS.players > 1 ? `<button class="btn ghost" data-a="invite">📨 Send the code to family far away</button>
+      ${CS.players > 1 ? `<p class="center">${livePill()} ${voicePill()}</p><button class="btn ghost" data-a="invite">📨 Send the code to family far away</button>
       <details class="card"><summary>Scan to join (same room)</summary><div class="center">${qrSvg(SITE + '#join=' + code)}<p class="small muted">Scanning opens the game in Safari. If they already have the app on their Home Screen, it is easier to open it and type the code.</p></div></details>` : ''}
       <button class="btn" data-a="tobadge">${CS.players > 1 ? 'Everyone has it, pick my badge' : 'Begin'}</button>`;
   },
@@ -404,7 +427,7 @@ const SCREENS = {
       ${(() => { const T = isLive() ? teamState() : null, meD = isLive() ? myDev() : '';
         return `<div class="pick">${M.BADGES.slice(0, CS.players).map((b, k) => { const o = T && T.owner[k], theirs = o && o.dev !== meD;
           return `<button class="opt${c.seat === k ? ' on' : ''}${theirs ? ' taken' : ''}${k < J && p.junior && c.seat < 0 && !theirs ? ' glow' : ''}" data-a="${theirs ? 'seattaken' : 'seat'}" data-v="${k}"><span class="big">${b.e}</span><b>${esc(b.name)}</b>${k < J ? '<span class="small">🐣 junior</span>' : ''}${o ? `<span class="small owner">${theirs ? esc(o.av) + ' ' + esc(o.name) : 'you'}</span>` : ''}</button>`; }).join('')}</div>
-        ${T ? `<p class="center small muted">${livePill()} ${T.owner.filter(Boolean).length} of ${CS.players} detectives have joined.</p>` : ''}`; })()}
+        ${T ? `<p class="center small muted">${livePill()} ${voicePill()} ${T.owner.filter(Boolean).length} of ${CS.players} detectives have joined.</p>` : ''}`; })()}
       <button class="btn" data-a="tointro" ${c.seat >= 0 ? '' : 'disabled'}>Enter</button>`;
   },
   intro() {
@@ -490,9 +513,11 @@ const TABS = {
     for (let s = 0; s < CS.players; s++) {
       const o = T.owner[s], mineS = s === c.seat, on = o && online(o.dev), done = o ? T.found[s] : 0;
       h += `<div class="mate${mineS ? ' me' : ''}"><span class="b">${badgeOf(s)}</span><div><b>${o ? esc(o.av) + ' ' + esc(o.name) : '<span class="muted">waiting to join…</span>'}</b>${s < CS.juniors ? ' <span class="tag">🐣 junior</span>' : ''}
-        <div class="small muted">${o ? `<span class="dot${on ? ' on' : ''}"></span>${on ? (mineS ? 'you' : 'here') : 'away'} · ${done} of ${CS.rounds} searches${!mineS && done >= c.found && done > 0 ? ' ✓' : ''}` : 'has not picked a badge yet'}</div></div></div>`;
+        <div class="small muted">${o ? `<span class="dot${on ? ' on' : ''}"></span>${on ? (mineS ? 'you' : 'here') : 'away'} · ${done} of ${CS.rounds} searches${!mineS && done >= c.found && done > 0 ? ' ✓' : ''}${esc(voiceLine(o.dev))}` : 'has not picked a badge yet'}</div></div></div>`;
     }
     h += `</div>`;
+    if (VC && VC.supported()) h += VC.isOn() ? `<div class="row"><button class="btn ghost" data-a="vmute">${VC.isMuted() ? '🎙️ Unmute' : '🔇 Mute me'}</button><button class="btn ghost" data-a="vleave">Leave voice</button></div>`
+      : `<button class="btn ghost" data-a="voice">🎙️ Talk with everyone (voice chat)</button>`;
     const feed = T.feed.filter(f => f.k === 'found' || f.k === 'share').slice().reverse();
     h += `<h3>Shared clues (${feed.length})</h3>`;
     if (!feed.length) h += `<p class="muted small">Nothing yet. Found clues and 📣 shared clues appear here for everyone.</p>`;
@@ -524,7 +549,7 @@ function render() {
   if (!me() && !['who', 'addprof'].includes(V.screen)) V.screen = 'who';
   if (V.screen === 'game' && (!CS || !curCase() || curCase().seat < 0)) V.screen = CS && curCase() && isLive() ? 'badge' : 'home';
   if (V.screen === 'game' && V.tab === 'team' && !isLive()) V.tab = 'clues';
-  if (L) { if (isLive() && me() && LIVE_SCREENS.includes(V.screen)) L.start(CS.code, whoAmI(), onLive); else L.stop(); }
+  if (L) { if (isLive() && me() && LIVE_SCREENS.includes(V.screen)) L.start(CS.code, whoAmI(), onLive); else { if (VC) VC.leave(); L.stop(); } }
   $app.innerHTML = SCREENS[V.screen]();
   const inGame = V.screen === 'game';
   $tabs.hidden = !inGame;
@@ -653,6 +678,33 @@ const ACT = {
       <div class="row"><button class="btn" data-a="close">Pick another</button><button class="btn ghost" data-a="seattake" data-v="${+v}">It's me, take it</button></div>`);
   },
   seattake(v) { closeModal(); ACT.seat(v, null, true); },
+  voice() {
+    if (!VC || !VC.supported()) { modal(`<h3>Voice chat</h3><p>This device can't do voice chat. Use a FaceTime or phone call instead.</p><button class="btn" data-a="close">OK</button>`); return; }
+    if (VC.isJoining()) return;
+    if (!VC.isOn()) {
+      modal(`<h3>🎙️ Voice chat</h3><p>Talk with everyone in this case, wherever they are.</p>
+        <p class="small muted">🎧 Headphones work best. Only for detectives in <b>different houses</b>: people in the same room should leave voice off, or it echoes.</p>
+        <div class="err" id="vmsg"></div>
+        <div class="row"><button class="btn ghost" data-a="close">Not now</button><button class="btn" data-a="vjoin">Join voice</button></div>`);
+      return;
+    }
+    const T = teamState(), meD = myDev();
+    const list = L.here().filter(h => h.voice && h.dev !== meD).map(h => { const s = T.owner.findIndex(o => o && o.dev === h.dev); return `<div>${s >= 0 ? badgeOf(s) : '🕵️'} <b>${esc(h.name || '?')}</b>${esc(voiceLine(h.dev))}</div>`; }).join('');
+    modal(`<h3>🎙️ Voice chat</h3>${list || '<p class="muted">Nobody else has joined voice yet.</p>'}
+      <p class="small muted">${VC.relay() ? 'Using the Cloudflare relay when a direct line is blocked.' : 'Direct connection between devices.'}</p>
+      <div class="row"><button class="btn ghost" data-a="vmute">${VC.isMuted() ? '🎙️ Unmute' : '🔇 Mute me'}</button><button class="btn red" data-a="vleave">Leave voice</button></div>
+      <button class="btn ghost" data-a="close">Close</button>`);
+  },
+  async vjoin() {
+    const msg = document.getElementById('vmsg');
+    try { await VC.join(myDev()); closeModal(); toast('You joined voice chat'); render(); }
+    catch (e) {
+      const t = e && e.message === 'denied' ? 'The microphone is blocked. On iPhone or iPad: open Settings, scroll to Safari, tap Microphone and pick Ask or Allow. Then try again.' : 'No microphone was found on this device.';
+      if (msg) msg.textContent = t; else toast(t);
+    }
+  },
+  vmute() { if (VC && VC.isOn()) { VC.mute(!VC.isMuted()); if (!$modal.hidden) ACT.voice(); render(); } },
+  vleave() { if (VC) VC.leave(); closeModal(); toast('You left voice chat'); render(); },
   liveinfo() {
     const st = L.status(), pend = L.pending(CS.code, myDev());
     modal(`<h3>${st === 'live' ? '🟢 Live' : st === 'trying' ? '🟡 Reconnecting' : '⚪ No signal'}</h3>
@@ -725,6 +777,7 @@ $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) soundOff(); else if (D.settings.sound && AC) soundOn(); });
 document.addEventListener('pointerdown', () => { if (D.settings.sound && !rainNode) soundOn(); }, { passive: true });
 
+if (VC) VC.onChange(() => { if (CS && LIVE_SCREENS.includes(V.screen)) liveRefresh(); });
 V.screen = me() ? 'home' : 'who';
 const hashJoin = (location.hash.match(/join=([A-Za-z]{6})/) || [])[1];
 if (hashJoin) { V.pendingJoin = hashJoin.toUpperCase(); try { history.replaceState(null, '', location.pathname); } catch (e) {} }

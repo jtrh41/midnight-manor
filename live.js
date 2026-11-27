@@ -26,7 +26,7 @@ function room(code) {
   return r;
 }
 
-const S = { code: null, who: null, onChange: null, timer: 0, busy: false, fails: 0, lastOk: 0, lastTry: 0, here: [], skew: 0, polls: 0, again: false };
+const S = { code: null, who: null, onChange: null, onSig: null, timer: 0, busy: false, fails: 0, lastOk: 0, lastTry: 0, here: [], skew: 0, polls: 0, again: false, voice: 0, sigOut: [], fastUntil: 0 };
 
 function schedule(ms) { clearTimeout(S.timer); if (S.code) S.timer = setTimeout(sync, ms); }
 async function sync() {
@@ -38,9 +38,10 @@ async function sync() {
   const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const kill = setTimeout(() => { if (ctl) ctl.abort(); }, 9000);
   let changed = false;
+  const sigs = S.sigOut.splice(0, 16);
   try {
     const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl ? ctl.signal : undefined, cache: 'no-store',
-      body: JSON.stringify({ op: 'sync', room: code, dev: w.dev, seat: w.seat, name: w.name, av: w.av, since: r.since, ping: S.polls % 4 === 0 ? 1 : 0, evs: sending }) });
+      body: JSON.stringify({ op: 'sync', room: code, dev: w.dev, seat: w.seat, name: w.name, av: w.av, since: r.since, ping: S.polls % 4 === 0 ? 1 : 0, voice: S.voice, evs: sending, sigs }) });
     const j = await res.json();
     if (j && !j.ok && sending.length && ['full', 'bad_request', 'too_big'].includes(j.error)) {   // the server will never take these: drop them instead of retrying forever
       const bad = new Set(sending.map(e => e.eid)); r.out = r.out.filter(e => !bad.has(e.eid)); keep(); S.lost = (S.lost || 0) + bad.size;
@@ -55,15 +56,17 @@ async function sync() {
     S.skew = j.now - Date.now(); S.here = Array.isArray(j.here) ? j.here : [];
     const wasDown = S.fails > 0 || !S.lastOk; S.fails = 0; S.lastOk = Date.now(); S.polls++;
     if (wasDown) changed = true;
-    if (j.more || r.out.length) S.again = true;
+    if (j.more || r.out.length || S.sigOut.length) S.again = true;
+    if (Array.isArray(j.sigs) && S.onSig) for (const m of j.sigs) { try { S.onSig(m.from, m.body); } catch (e) {} }
   } catch (e) {
+    if (sigs.length && S.code === code) S.sigOut.unshift(...sigs);
     S.fails++; if (S.fails === 1 || S.fails === 4) changed = true;
   } finally {
     clearTimeout(kill); S.busy = false;
   }
   if (S.code !== code) return;
   if (S.onChange) S.onChange(changed);
-  schedule(S.again ? 150 : S.fails ? Math.min(12000, 2000 * S.fails) : 3000);
+  schedule(S.again ? 150 : S.fails ? Math.min(12000, 2000 * S.fails) : Date.now() < S.fastUntil ? 1000 : 3000);
 }
 
 const Live = {
@@ -75,7 +78,25 @@ const Live = {
     S.code = code; S.fails = 0; S.lastOk = 0; S.here = []; S.polls = 0; room(code).at = Date.now(); keep();
     schedule(0);
   },
-  stop() { S.code = null; clearTimeout(S.timer); },
+  stop() {
+    if (S.code && (S.sigOut.length || S.voiceWas)) {       // last word on the way out (e.g. "I left voice"), even if the page is closing
+      const w = S.who || {};
+      try { fetch(API, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'sync', room: S.code, dev: w.dev, seat: w.seat, name: w.name, av: w.av, since: 1e15, ping: 1, voice: S.voice, evs: [], sigs: S.sigOut.splice(0, 16) }) }).catch(() => {}); } catch (e) {}
+    }
+    S.code = null; clearTimeout(S.timer); S.sigOut = []; S.voiceWas = 0;
+  },
+  // voice: am I in the call, messages for setting up calls, relay passes
+  setVoice(v) { if (S.voice && !v) S.voiceWas = 1; S.voice = v ? 1 : 0; S.polls = 0; S.fastUntil = Date.now() + 20000; schedule(0); },
+  onSig(f) { S.onSig = f; },
+  sendSig(to, body) { S.sigOut.push({ to, body }); S.fastUntil = Date.now() + 20000; schedule(0); },
+  fast(ms) { S.fastUntil = Math.max(S.fastUntil, Date.now() + ms); },
+  async ice() {
+    const w = S.who || {};
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null; const kill = setTimeout(() => { if (ctl) ctl.abort(); }, 6000);
+    try { const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl ? ctl.signal : undefined, body: JSON.stringify({ op: 'ice', room: S.code, dev: w.dev }) });
+      const j = await res.json(); return j && j.ok && Array.isArray(j.iceServers) ? j : null; } catch (e) { return null; } finally { clearTimeout(kill); }
+  },
   active: () => S.code,
   setWho(who) { const old = S.who || {}; S.who = who; if (old.seat !== who.seat || old.name !== who.name) { S.polls = 0; schedule(0); } },
   send(code, ev, dev) { const r = room(code); const e = Object.assign({ eid: rid(), dev }, ev); r.out.push(e); r.at = Date.now(); keep(); if (S.code === code) schedule(0); return e; },
