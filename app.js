@@ -91,7 +91,7 @@ function portrait(p, size) {
   }
   if (L.beard) extra += `<path d="M33 46 Q35 70 50 70 Q65 70 67 46 Q60 58 50 58 Q40 58 33 46 Z" fill="${L.hair}"/>`;
   if (t.includes('m')) extra += `<path d="M40 52 Q45 48 50 51 Q55 48 60 52 Q55 55 50 53 Q45 55 40 52 Z" fill="${L.beard ? '#cfc8bb' : L.hair}"/>`;
-  if (t.includes('g')) extra += `<g fill="none" stroke="#e8d7a8" stroke-width="2"><circle cx="42" cy="42" r="6"/><circle cx="58" cy="42" r="6"/><path d="M48 42 L52 42"/></g>`;
+  if (t.includes('g')) extra += `<g stroke="#140d08" stroke-width="3.4" stroke-linejoin="round"><circle cx="41" cy="42" r="7.5" fill="#bfe3ff" fill-opacity=".45"/><circle cx="59" cy="42" r="7.5" fill="#bfe3ff" fill-opacity=".45"/><path d="M48.5 41 Q50 39 51.5 41 M33.5 41 L30 39 M66.5 41 L70 39" fill="none" stroke-linecap="round"/></g><circle cx="42" cy="42" r="2.2" fill="#1b120c"/><circle cx="58" cy="42" r="2.2" fill="#1b120c"/><path d="M37 39 L39.5 37 M55 39 L57.5 37" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".8"/>`;
   const scarf = t.includes('s') ? `<path d="M30 72 Q50 82 70 72 L70 80 Q50 90 30 80 Z" fill="${L.scarfC}"/><path d="M58 78 L64 96 L56 96 Z" fill="${L.scarfC}"/>` : '';
   return `<svg width="${z}" height="${z}" viewBox="0 0 100 100" role="img" aria-label="${esc(p.name)}"><circle cx="50" cy="50" r="49" fill="#2c2118" stroke="#4a3626"/>
     <path d="M14 100 Q16 74 50 72 Q84 74 86 100 Z" fill="${coat}"/><rect x="44" y="58" width="12" height="14" fill="${L.skin}"/>
