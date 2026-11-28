@@ -510,7 +510,7 @@ const TABS = {
         <p class="muted small">Talk over your clues while you wait. Their clue will pop up on the Team page.</p></div>
         <button class="btn ghost" data-a="tab" data-v="team">👥 See the team</button><button class="btn ghost small" data-a="nowait">Don't wait for them</button>`;
     }
-    let h = `<p class="center">Search <b>${c.found + 1}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? `<br><span class="muted small">${isLive() && L.status() === 'live' ? 'Search at your own pace. Your clues pop up on everyone's Team page.' : 'Search at your own pace, then share what you found.'}</span>` : ''}</p>`;
+    let h = `<p class="center">Search <b>${c.found + 1}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? `<br><span class="muted small">${isLive() && L.status() === 'live' ? 'Search at your own pace. Your clues pop up on everyone’s Team page.' : 'Search at your own pace, then share what you found.'}</span>` : ''}</p>`;
     for (const up of [1, 0]) {
       h += `<div class="floor">${esc(up ? Z.up : Z.down)}</div><div class="pick">`;
       CS.rooms.forEach((r, k) => { if (!!r.up !== !!up) return; const done = c.searched.includes(k) && !all;
