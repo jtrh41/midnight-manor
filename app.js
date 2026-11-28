@@ -192,7 +192,7 @@ function notesPanel() {
       : `<th>${[...x.t].map(k => esc(M.TAGS[k].who)).join('<br>') || '–'}</th>`).join('')}<th></th></tr>`;
   CS.sus.forEach((p, s) => {
     const words = p.name.split(' '), short = words.length > 1 ? words[words.length - 1] : p.name;
-    h += `<tr><td class="nm">${portrait(p, 24)}<span>${esc(short)}</span></td>`;
+    h += `<tr><td class="nm">${portrait(p, 36)}<span>${esc(short)}</span></td>`;
     for (let x = 0; x < n; x++) { const v = N[key][s * n + x]; h += `<td class="c ${v === 1 ? 'x' : v === 2 ? 'y' : ''}" data-a="cell" data-v="${key}:${s * n + x}">${v === 1 ? '✗' : v === 2 ? '✓' : ''}</td>`; }
     const tv = N.t[s]; h += `<td class="c thf ${tv === 1 ? 'x' : tv === 2 ? 'q' : ''}" data-a="cell" data-v="t:${s}">${tv === 1 ? '✗' : tv === 2 ? '❓' : ''}</td></tr>`;
   });

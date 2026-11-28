@@ -80,9 +80,11 @@ table.nb td.thf{background:#2a1716}
 .nbshow{width:100%;color:var(--gold2)}
 table.nb.sm{margin:4px auto 0;border-spacing:2px}
 table.nb.sm th .e{font-size:17px}
-table.nb.sm th.nm{width:78px}
-table.nb.sm td.nm{font-size:12px;height:33px}
-table.nb.sm td.c{height:33px;font-size:18px;border-radius:6px}
+table.nb.sm th.nm{width:92px}
+table.nb.sm td.nm{font-size:12px;height:40px}
+table.nb td.nm svg{flex:none}
+table.nb td.nm span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.nb.sm td.c{height:40px;font-size:18px;border-radius:6px}
 /* inside a room */
 .rscene{position:relative;aspect-ratio:16/11;border-radius:16px;overflow:hidden;border:2px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.6);perspective:700px;margin:4px 0 10px}
 .rscene svg{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -126,7 +128,7 @@ table.nb.sm td.c{height:33px;font-size:18px;border-radius:6px}
 .rfound{animation:rise .6s ease-out both;animation-delay:calc(2.9s + var(--el))}
 @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.rscene .door,.rscene .beam{display:none}.rscene .pr,.rscene .spark,.rfound,.rscene .feat span{animation:none}.rscene .spark{display:none}}
-@media (max-height:700px){table.nb.sm td.c,table.nb.sm td.nm{height:28px}table.nb.sm th .e{font-size:15px}}
+@media (max-height:700px){table.nb.sm td.c,table.nb.sm td.nm{height:34px}table.nb.sm td.nm svg{width:30px;height:30px}table.nb.sm th .e{font-size:15px}}
 .seg{display:flex;background:var(--panel2);border-radius:12px;padding:3px;border:1px solid var(--line)}
 .seg button{flex:1;border:0;background:transparent;color:var(--muted);font:600 15px var(--sans);min-height:42px;border-radius:10px;cursor:pointer}
 .seg button.on{background:var(--gold);color:#2a1606}
