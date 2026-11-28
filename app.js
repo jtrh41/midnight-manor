@@ -259,11 +259,9 @@ function teamState() {
 }
 const nameOf = (T, f) => { const n = T.names[f.dev]; return n ? n.name : 'Someone'; };
 const badgeOf = s => M.BADGES[s] ? M.BADGES[s].e : '🕵️';
-// detectives this phone waits for before its next search (away or offline players never hold anyone up)
-function waitingFor(T) {
-  const c = curCase(); if (!isLive() || L.status() !== 'live' || !c || c.seat < 0) return [];
-  return range(CS.players).filter(s => s !== c.seat && T.owner[s] && T.found[s] < c.found && T.skip[s] < c.found && online(T.owner[s].dev));
-}
+// 2026-11-27: the owner asked that nobody waits for the others before searching again, so every detective
+// searches at their own pace (own candle). Kept as a function so the old 'skip' moves in saved logs stay harmless.
+function waitingFor(T) { return []; }
 let liveSeen = { code: null, eids: new Set() }, liveSig = '';
 function finishCase(c, done, n) {
   const p = me();
@@ -393,12 +391,12 @@ const SCREENS = {
       <div class="card"><p><b>1.</b> One person opens the <b>Case book</b>, picks a place, a case and how hard (Easy, Medium, Hard or Very hard), and says how many detectives (and how many juniors) are playing. They get a 6-letter code.</p>
       <p><b>2.</b> Everyone else taps <b>Join a case</b> and types the code. Each person picks a different badge. <b>Junior detectives pick a 🐣 junior badge</b>: those get simpler clues.</p>
       <p><b>3.</b> Each device shows <b>secret clues</b> only that detective can see. Read them out, or keep one back for a dramatic moment.</p>
-      <p><b>4.</b> Each round, everyone <b>searches a room</b> for one more clue. The candle burns down with each search.</p>
+      <p><b>4.</b> Everyone <b>searches rooms</b> for more clues, at their own pace. Your candle burns down with each search.</p>
       <p><b>5.</b> Mark what you learn in the <b>Notebook</b>: ✗ for "no", ✓ for "yes".</p>
       <p><b>6.</b> When the team agrees, <b>everyone enters the team's answer</b> under Accuse: WHO took it, WHERE they hid it, WHAT they used. You get 3 tries (2 on Very hard); fewer tries, more stars. Solving a case on any difficulty unlocks the next one.</p></div>
       <div class="card"><h3>The golden rule</h3><p>Every suspect was in a <b>different room</b> and held a <b>different thing</b>. The thief hid the treasure in the room they were in, and used the thing they were holding.</p>
       <p class="muted small">Every clue is true. Nobody's clues alone are enough. Works with no internet.</p></div>
-      <div class="card"><h3>📞 Playing with family far away</h3><p>Start a FaceTime or phone call, then tap <b>📨 Send the code</b> on the case code screen. When phones have a signal they play <b>live</b>: each round opens when everyone has searched, found clues appear on everyone's <b>👥 Team</b> page, and one accusation counts for the whole team.</p>
+      <div class="card"><h3>📞 Playing with family far away</h3><p>Start a FaceTime or phone call, then tap <b>📨 Send the code</b> on the case code screen. When phones have a signal they play <b>live</b>: everyone searches at their own pace, found clues appear on everyone's <b>👥 Team</b> page, and one accusation counts for the whole team.</p>
       <p class="small muted">If someone's signal drops, their game keeps working and catches up when it's back, and nobody is kept waiting for them.</p>
       <p>Tap <b>🎙️ Voice</b> at the top to talk with everyone right in the game (headphones work best). People in the same room should leave voice off.</p></div>
       <button class="btn" data-a="home">Got it</button>`;
@@ -512,7 +510,7 @@ const TABS = {
         <p class="muted small">Talk over your clues while you wait. Their clue will pop up on the Team page.</p></div>
         <button class="btn ghost" data-a="tab" data-v="team">👥 See the team</button><button class="btn ghost small" data-a="nowait">Don't wait for them</button>`;
     }
-    let h = `<p class="center">Round <b>${c.found + 1}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? `<br><span class="muted small">${isLive() && L.status() === 'live' ? 'Everyone searches once, then the next round opens.' : 'Everyone searches once, then share what you found.'}</span>` : ''}</p>`;
+    let h = `<p class="center">Search <b>${c.found + 1}</b> of ${CS.rounds}. Pick a room to search.${CS.players > 1 ? `<br><span class="muted small">${isLive() && L.status() === 'live' ? 'Search at your own pace. Your clues pop up on everyone's Team page.' : 'Search at your own pace, then share what you found.'}</span>` : ''}</p>`;
     for (const up of [1, 0]) {
       h += `<div class="floor">${esc(up ? Z.up : Z.down)}</div><div class="pick">`;
       CS.rooms.forEach((r, k) => { if (!!r.up !== !!up) return; const done = c.searched.includes(k) && !all;
@@ -745,7 +743,7 @@ const ACT = {
     const st = L.status(), pend = L.pending(CS.code, myDev());
     modal(`<h3>${st === 'live' ? '🟢 Live' : st === 'trying' ? '🟡 Reconnecting' : '⚪ No signal'}</h3>
       <p>Everyone's phone builds the same mystery from the code, so <b>the game never needs the internet</b> to work.</p>
-      <p>When there is a signal, phones share searches, shared clues and accusations, and each round waits until everyone has searched. Anyone who drops out is not waited for, and catches up when they are back.</p>
+      <p>When there is a signal, phones share searches, shared clues and accusations, and everyone searches at their own pace (nobody waits for anyone). Anyone who drops out catches up when they are back.</p>
       <p class="small muted">${pend ? `${pend} move${pend > 1 ? 's' : ''} waiting to be sent.` : 'Nothing waiting to be sent.'} Playing far apart? Stay on a FaceTime or phone call to talk it through.</p>
       <button class="btn" data-a="close">OK</button>`);
   },
