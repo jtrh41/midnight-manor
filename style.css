@@ -128,7 +128,6 @@ table.nb.sm td.c{height:40px;font-size:18px;border-radius:6px}
 .rfound{animation:rise .6s ease-out both;animation-delay:calc(2.9s + var(--el))}
 @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.rscene .door,.rscene .beam{display:none}.rscene .pr,.rscene .spark,.rfound,.rscene .feat span{animation:none}.rscene .spark{display:none}}
-@media (max-height:700px){table.nb.sm td.c,table.nb.sm td.nm{height:34px}table.nb.sm td.nm svg{width:30px;height:30px}table.nb.sm th .e{font-size:15px}}
 .seg{display:flex;background:var(--panel2);border-radius:12px;padding:3px;border:1px solid var(--line)}
 .seg button{flex:1;border:0;background:transparent;color:var(--muted);font:600 15px var(--sans);min-height:42px;border-radius:10px;cursor:pointer}
 .seg button.on{background:var(--gold);color:#2a1606}
@@ -203,3 +202,15 @@ details.card summary{cursor:pointer;color:var(--gold2)}
 table.nb tr.fl th{font:600 9px/1.15 var(--sans);white-space:normal;vertical-align:top;padding:1px 0 3px;color:var(--muted)}
 table.nb tr.fl th.up{color:var(--gold2)}
 table.nb tr.fl th.dn{color:#8fc8ff}
+/* notes grid, big version (2026-11-27: owner wanted the grid and the faces bigger) */
+table.nb.sm{border-spacing:3px}
+table.nb.sm th{font-size:11px}
+table.nb.sm th .e{font-size:22px}
+table.nb.sm tr.fl th{font-size:10px}
+table.nb.sm th.nm{width:70px}
+table.nb.sm td.nm{flex-direction:column;justify-content:center;gap:1px;height:66px;font-size:11px;text-align:center}
+table.nb.sm td.nm svg{width:50px;height:50px}
+table.nb.sm td.nm span{max-width:70px}
+table.nb.sm td.c{height:66px;font-size:26px;border-radius:8px}
+@media (max-height:700px){table.nb.sm td.c,table.nb.sm td.nm{height:54px}table.nb.sm td.nm svg{width:40px;height:40px}table.nb.sm th .e{font-size:18px}}
+@media (min-width:700px) and (min-height:701px){table.nb.sm th{font-size:13px}table.nb.sm tr.fl th{font-size:12px}table.nb.sm th .e{font-size:28px}table.nb.sm th.nm{width:96px}table.nb.sm td.nm{height:86px;font-size:14px}table.nb.sm td.nm svg{width:68px;height:68px}table.nb.sm td.nm span{max-width:96px}table.nb.sm td.c{height:86px;font-size:34px}}
